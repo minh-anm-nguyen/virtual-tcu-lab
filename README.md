@@ -12,7 +12,8 @@ spec-driven artifacts for the project being built live in `specs/`. Neither is t
 | Project | Target | State |
 |---|---|---|
 | 01 Thread-Safe Event Bus | `tcu_eventbus` | complete - 51 tests, clean under ASan/UBSan and TSan |
-| 02-30 | - | not started |
+| 02 IPC Service Framework | `tcu_ipc` | complete - unit, integration and fault suites; Linux only |
+| 03-30 | - | not started |
 
 ## Requirements
 
@@ -150,6 +151,81 @@ dispatcher, so the queue sits at its 4096-event capacity and the percentiles are
 delay, not dispatch cost. Lower the capacity and the latencies fall while publishers block instead.
 That is the backpressure design working, not a defect - but it does mean these numbers say little
 about per-event overhead.
+
+## Project 02: IPC Service Framework
+
+`tcu_ipc` carries request/response and notifications **between processes** over a Unix domain
+socket. Project 01's event bus moves events inside one process; this moves them across a process
+boundary. The two are not interchangeable: they have different fault models and different delivery
+guarantees.
+
+```text
+tcu_client  ---- AF_UNIX / SOCK_STREAM ---->  vehicle_service
+   IpcClient                                      IpcServer
+   request/response with deadlines                handlers on an executor
+   bounded TX queue                               per-session bounded TX queue
+   reconnect with backoff                         SO_PEERCRED authorization
+   subscriptions restored on reconnect            notifications to subscribers
+```
+
+**Protocol v1** is a length-prefixed binary frame - `body_length`, `version`, `type`, `flags`,
+`request_id`, `name_length`, name, payload - all big-endian. The payload is opaque: the library
+never parses it, so there is no JSON dependency. The byte layout, the reserved `ipc.*` control
+methods (`ipc.hello`, `ipc.subscribe`, `ipc.unsubscribe`) and the nine wire error codes are
+specified in `specs/002-ipc-service-framework/contracts/wire_protocol.md`.
+
+### Run the demo
+
+```bash
+./scripts/run_ipc_demo.sh
+```
+
+It starts the service, runs a status request, subscribes to `vehicle.ignitionChanged`, kills the
+service with `SIGKILL`, restarts it, and shows the client detecting the loss, backing off,
+reconnecting, re-subscribing and receiving notifications again - the goal stated in the design
+document's section 1. By hand, in three terminals:
+
+```bash
+./build/debug/apps/vehicle_service/vehicle_service --socket /tmp/virtual-tcu/vehicle.sock
+./build/debug/apps/tcu_client/tcu_client --socket /tmp/virtual-tcu/vehicle.sock \
+  --scenario status-and-subscribe
+pkill -9 -f vehicle_service      # controlled demo environment only
+```
+
+The socket must live on the Linux filesystem. Binding an `AF_UNIX` socket on a DrvFs path such as
+`/mnt/d/...` fails `EOPNOTSUPP` under WSL2, so keep the path under `/tmp`.
+
+### Test labels
+
+```bash
+ctest --test-dir build/debug -L ipc-unit            # codec, client, server, session, metrics
+ctest --test-dir build/debug -L ipc-integration     # forks the real service binary
+ctest --test-dir build/debug -L ipc-fault           # the design document's fault matrix
+TCU_IPC_STRESS_SECONDS=1800 ctest --test-dir build/debug -R FaultStress   # the 30-minute soak
+```
+
+### IPC design trade-offs
+
+| Decision | v1 choice | Cost |
+|---|---|---|
+| Transport | `AF_UNIX` / `SOCK_STREAM` | Linux-local only; framing is ours to get right |
+| Readiness | `poll()`, not `epoll` | O(n) per wake, which is free at 32 sessions |
+| Payload | opaque bytes, no JSON library | the apps compose and validate their own payloads |
+| Concurrency | one I/O loop plus a one-thread executor | more moving parts than thread-per-client, far more control |
+| Backpressure | bounded queues, fail fast | callers must handle `QueueFull` |
+| Slow consumer | drop the frame and count it | a notification can be lost; no session is ever starved |
+| Retry | reconnect only, never replay an RPC | a side-effecting call is the caller's to repeat |
+| Authorization | directory permissions plus `SO_PEERCRED` | local Linux only; no cryptographic identity |
+
+### What IPC v1 does not promise
+
+No multi-host transport, no shared memory, no POSIX message queues. No exactly-once delivery, no
+durable replay after a crash, no transactions. No encryption on the socket. No automatic retry of a
+request that has side effects. No `flags` bits - any nonzero value is a protocol error, which is
+what reserves them for v2. Notifications produced while a client is disconnected are lost.
+
+Windows is not a target for this project at all: it needs `SO_PEERCRED`, `poll` and `MSG_NOSIGNAL`,
+so the CMake targets are guarded and a Windows configure prints `Project 02 (IPC) skipped`.
 
 ## Logging
 

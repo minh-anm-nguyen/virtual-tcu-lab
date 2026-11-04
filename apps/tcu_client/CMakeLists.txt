@@ -1,0 +1,5 @@
+add_executable(tcu_client main.cpp)
+target_link_libraries(tcu_client PRIVATE tcu_ipc)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(tcu_client PRIVATE -Wall -Wextra)
+endif()

@@ -1,0 +1,5 @@
+add_executable(vehicle_service main.cpp)
+target_link_libraries(vehicle_service PRIVATE tcu_ipc tcu_eventbus)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(vehicle_service PRIVATE -Wall -Wextra)
+endif()

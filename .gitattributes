@@ -1,0 +1,4 @@
+# Shell scripts must stay LF even when checked out on Windows. With
+# core.autocrlf=true a CRLF checkout makes bash fail on the shebang line, and
+# scripts/run_ipc_demo.sh is run from WSL against this working tree.
+*.sh text eol=lf
