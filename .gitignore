@@ -1,0 +1,31 @@
+# Build output
+build/
+build-*/
+.cache/
+compile_commands.json
+
+# C++ artifacts
+*.o
+*.a
+*.so
+*.exe
+*.dll
+bin/
+obj/
+out/
+
+# Editors / OS
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+*.tmp
+*.log
+.env
+.env.*
+
+# Markdown stays local: the 30 design docs, spec-kit artifacts under specs/,
+# the constitution and the installed SKILL.md files are not versioned.
+# README.md is the exception - spec section 10 requires it as a deliverable.
+*.md
+!README.md

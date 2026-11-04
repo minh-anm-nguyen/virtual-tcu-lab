@@ -1,0 +1,2 @@
+add_executable(event_bus_bench main.cpp)
+target_link_libraries(event_bus_bench PRIVATE tcu_eventbus)
