@@ -5,7 +5,9 @@ include(GoogleTest)
 function(tcu_add_event_bus_test name)
   add_executable(${name} ${name}.cpp)
   target_link_libraries(${name} PRIVATE tcu_eventbus GTest::gtest_main)
-  target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  # tests/ carries the shared TestGate, moved there when project 03 reused it;
+  # the existing #include "support/test_gate.hpp" lines still resolve.
+  target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/tests)
   gtest_discover_tests(${name} PROPERTIES TIMEOUT 30)
 endfunction()
 

@@ -13,7 +13,8 @@ spec-driven artifacts for the project being built live in `specs/`. Neither is t
 |---|---|---|
 | 01 Thread-Safe Event Bus | `tcu_eventbus` | complete - 51 tests, clean under ASan/UBSan and TSan |
 | 02 IPC Service Framework | `tcu_ipc` | complete - unit, integration and fault suites; Linux only |
-| 03-30 | - | not started |
+| 03 Timer & Task Scheduler | `tcu_scheduler` | complete - 87 unit, 20 integration, 9 stress tests; Linux and Windows |
+| 04-30 | - | not started |
 
 ## Requirements
 
@@ -226,6 +227,98 @@ what reserves them for v2. Notifications produced while a client is disconnected
 
 Windows is not a target for this project at all: it needs `SO_PEERCRED`, `poll` and `MSG_NOSIGNAL`,
 so the CMake targets are guarded and a Windows configure prints `Project 02 (IPC) skipped`.
+
+## Project 03: Timer & Task Scheduler
+
+`tcu_scheduler` schedules delayed and periodic work inside one process. One coordinator thread sleeps
+on the earliest deadline of a min-heap; a bounded FIFO queue and a fixed worker pool run the
+callbacks. No user callback is ever invoked while a scheduler lock is held, so a callback may
+schedule and cancel freely.
+
+Design document: `Virtual_TCU_Lab_30_System_Designs/03_Timer_Task_Scheduler_System_Design.md`.
+Spec and contracts: `specs/003-timer-task-scheduler/`.
+
+```cpp
+#include "tcu/scheduler/timer_scheduler.hpp"
+
+tcu::scheduler::TimerScheduler scheduler(tcu::scheduler::Config{});
+scheduler.start();
+
+// A timeout.
+auto id = scheduler.scheduleAfter(std::chrono::seconds(3), [] { /* ... */ }).id;
+scheduler.cancel(id);
+
+// Telemetry sampling that stays on its nominal cadence and skips what it misses.
+scheduler.scheduleEvery(std::chrono::seconds(1),
+                        tcu::scheduler::PeriodicMode::FixedRateSkipMissed,
+                        [] { /* ... */ });
+
+scheduler.stop(tcu::scheduler::StopMode::Drain);
+```
+
+Unlike project 02 this one is **portable**: it uses only the standard library, so it builds and runs
+on Linux and on Windows. Only one integration test is Linux-gated, because it drives a real project
+02 IPC server.
+
+### Run the demos
+
+```bash
+./scripts/run_scheduler_demo.sh build-wsl        # the whole spec section 20 workflow
+
+# Or one at a time:
+./build-wsl/apps/telemetry_timer_demo/telemetry_timer_demo --interval-ms 1000 --samples 5
+./build-wsl/apps/modem_timeout_demo/modem_timeout_demo --timeout-ms 3000 --reply-ms 2000
+./build-wsl/apps/modem_timeout_demo/modem_timeout_demo --timeout-ms 50 --reply-ms 50 --repeat 300
+```
+
+The last one is the interesting one: with the deadline equal to the reply latency the race is
+genuinely undecided, and the demo asserts that `replied + timed_out` equals the round count exactly.
+Cancelling the timer is **not** what makes the outcome single - the caller owns an atomic request
+state, because `cancel()` can return `RunningCancelRequested` when the timeout callback has already
+started.
+
+### Test labels
+
+```bash
+ctest --test-dir build-wsl -L scheduler-unit          # fake clock; every deadline case, no sleeps
+ctest --test-dir build-wsl -L scheduler-integration   # real clock; backpressure, shutdown, project 01 and 02
+ctest --test-dir build-wsl -L scheduler-stress        # concurrency, churn, 10k timers
+TCU_SCHEDULER_STRESS_SECONDS=600 ctest --test-dir build-wsl -L scheduler-stress   # a soak
+```
+
+### Scheduler design trade-offs
+
+| Decision | v1 choice | Cost |
+|---|---|---|
+| Deadline clock | `steady_clock` only | no wall-clock or calendar scheduling; a suspend/resume may leave timers overdue |
+| Locking | one mutex for registry, heap, states and queue | coarser than two mutexes, but no lock order to get wrong and a callback can call back in |
+| Periodic overload | explicit mode: drift (`FixedDelay`) or skip (`FixedRateSkipMissed`) | the caller must choose; there is no implicit catch-up |
+| Ready queue full | a due one-shot stays scheduled and retries; a fixed-rate tick is skipped and counted | lateness grows under overload; it is measured, not bounded |
+| Lifecycle | single-use: `start()` after `Stopped` is `InvalidState` | a restart means a fresh instance, which avoids thread-resurrection races |
+| `cancel()` of a running callback | cooperative: `RunningCancelRequested`, no interruption | the caller needs its own completion state for a race (see the demo above) |
+| `stop()` | no timeout, no force-kill | a callback that never returns blocks `stop()` for ever, by design |
+
+### Benchmark
+
+```bash
+./build-wsl/benchmarks/scheduler_bench/scheduler_bench --timers 10000 --duration-s 30
+```
+
+Measured on this repository's WSL2 Ubuntu host, 8 hardware threads, GCC 11.4, **debug build with
+assertions on**, 10,000 fixed-rate timers at a 1 s cadence and 2 workers: about 5,900 callback starts
+per second, mean start lateness 1.8 ms, p50 under 1 ms, p95 under 10 ms, p99 under 25 ms, no skipped
+periods. A release build and a dedicated host would do better.
+
+That is a measurement, not a promise. Nothing in the test suite asserts a latency threshold: the
+design document calls its p99 target a benchmark, not a guarantee, and a workstation number says
+nothing about real-time behaviour.
+
+### What scheduler v1 does not promise
+
+No hard real-time scheduling, no OS real-time priorities, no sub-millisecond precision. No durable
+jobs: nothing survives a process restart, and there is no exactly-once delivery across a crash. No
+cron or calendar expressions. No callback priorities and no runtime resizing of the worker pool. No
+way to interrupt a running callback. Nothing executes while the host is suspended.
 
 ## Logging
 

@@ -34,8 +34,16 @@ else()
   message(STATUS "Project 02 (IPC) skipped: Linux only")
 endif()
 
+# Project 03: Timer & Task Scheduler. Standard library only - no POSIX call
+# anywhere - so it is deliberately NOT inside the Linux guard above
+# (research R-00 in specs/003-timer-task-scheduler).
+add_subdirectory(modules/scheduler)
+add_subdirectory(apps/telemetry_timer_demo)
+add_subdirectory(apps/modem_timeout_demo)
+
 if(TCU_BUILD_BENCHMARKS)
   add_subdirectory(benchmarks/event_bus_bench)
+  add_subdirectory(benchmarks/scheduler_bench)
 endif()
 
 if(TCU_BUILD_TESTS)
@@ -54,4 +62,7 @@ if(TCU_BUILD_TESTS)
     add_subdirectory(tests/integration/ipc)
     add_subdirectory(tests/fault_injection/ipc)
   endif()
+  add_subdirectory(tests/unit/scheduler)
+  add_subdirectory(tests/integration/scheduler)
+  add_subdirectory(tests/stress/scheduler)
 endif()

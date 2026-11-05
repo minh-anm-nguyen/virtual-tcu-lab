@@ -1,6 +1,7 @@
 #pragma once
 
 #include <condition_variable>
+#include <cstddef>
 #include <mutex>
 
 namespace tcu::test {
@@ -13,7 +14,7 @@ class TestGate {
   // Called from inside the handler: announces arrival, then blocks.
   void wait_until_opened() {
     std::unique_lock<std::mutex> lock(mutex_);
-    entered_ = true;
+    ++entered_count_;
     entered_cv_.notify_all();
     opened_cv_.wait(lock, [this] { return opened_; });
   }
@@ -27,19 +28,25 @@ class TestGate {
     opened_cv_.notify_all();
   }
 
-  // Called from the test: waits until the handler is actually blocked, so the
-  // test knows the dispatcher is occupied.
-  void wait_until_entered() {
+  // Called from the test: waits until `count` handlers are actually blocked, so
+  // the test knows that many workers are occupied. Added for project 03, where
+  // a scheduler runs several workers; the no-argument form is the original.
+  void wait_until_entered(std::size_t count = 1) {
     std::unique_lock<std::mutex> lock(mutex_);
-    entered_cv_.wait(lock, [this] { return entered_; });
+    entered_cv_.wait(lock, [this, count] { return entered_count_ >= count; });
+  }
+
+  std::size_t entered_count() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return entered_count_;
   }
 
  private:
-  std::mutex mutex_;
+  mutable std::mutex mutex_;
   std::condition_variable opened_cv_;
   std::condition_variable entered_cv_;
   bool opened_ = false;
-  bool entered_ = false;
+  std::size_t entered_count_ = 0;
 };
 
 }  // namespace tcu::test
