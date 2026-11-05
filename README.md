@@ -14,7 +14,8 @@ spec-driven artifacts for the project being built live in `specs/`. Neither is t
 | 01 Thread-Safe Event Bus | `tcu_eventbus` | complete - 51 tests, clean under ASan/UBSan and TSan |
 | 02 IPC Service Framework | `tcu_ipc` | complete - unit, integration and fault suites; Linux only |
 | 03 Timer & Task Scheduler | `tcu_scheduler` | complete - 87 unit, 20 integration, 9 stress tests; Linux and Windows |
-| 04-30 | - | not started |
+| 04 Configuration & Logging | `tcu_config`, `tcu_logging` | complete - 118 unit, 17 integration, 3 stress tests; clean under ASan/UBSan and TSan; Linux and Windows |
+| 05-30 | - | not started |
 
 ## Requirements
 
@@ -331,3 +332,104 @@ TCU_EVENTBUS_LOG=1 ./build/debug/apps/event_bus_demo/event_bus_demo
 
 Only the keys listed in the project's metrics contract are ever emitted. Payload contents, keys,
 tokens and credentials never appear in a log line.
+
+## Project 04: Configuration & Logging Service
+
+Two libraries and one demonstration.
+
+`tcu_logging` is a bounded asynchronous structured logger: a capped MPSC queue, one writer thread
+that alone owns the sinks, severity filtering before formatting, newline-delimited JSON to a
+console sink and a size-rotating file sink, a severity-aware overload policy, and a sink that goes
+unhealthy instead of taking the application down. It links **nothing** - not even project 03 - so
+any project from 01 to 30 can use it without inheriting a dependency.
+
+`tcu_config` loads one JSON file into an immutable typed snapshot, validates types, ranges,
+cross-field invariants, the schema version and unknown keys before publishing anything, hands the
+snapshot over at a single atomic point, bumps a generation only on an effective change, rejects the
+whole candidate when any restart-only key moved, and notifies observers asynchronously in
+publication order with each callback failure isolated and counted. It reuses project 03's
+`TimerScheduler` for both of its background jobs - the notifier and the file poller - so it adds no
+thread and no queue of its own.
+
+```bash
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake --build build
+
+ctest --test-dir build -L logging-unit --output-on-failure
+ctest --test-dir build -L config-unit --output-on-failure
+ctest --test-dir build -L config-logging-integration --output-on-failure
+ctest --test-dir build -L config-logging-stress --output-on-failure
+
+# A longer soak: same test, more seconds.
+TCU_CONFIG_STRESS_SECONDS=3600 ctest --test-dir build -R Soak --output-on-failure
+
+# The six scenarios of the design document, unattended:
+scripts/run_config_logging_demo.sh build
+```
+
+The first configure downloads one pinned header, `nlohmann/json` v3.11.3, verified by SHA256. It is
+fetched by URL rather than through the upstream CMake project, which declares
+`cmake_minimum_required(VERSION 3.1)` and so is refused outright by CMake 4. After the first
+configure the build is offline.
+
+### Metrics
+
+`ConfigurationService::metrics()` reports the committed generation, the notification queue depth, a
+sticky degraded flag, and counters for reload attempts, committed changes, no-ops, failures by
+reason, notification deliveries, notification failures and resyncs. `AsyncLogger::metrics()`
+reports queue depth, per-sink health, and counters for records submitted, filtered, enqueued,
+dropped by severity, truncated, written per sink, sink errors, rotations and write latency.
+
+Every label comes from a closed set - a severity name, a sink name, or a `LoadError` name - so
+metric cardinality is bounded by construction. No path, correlation id or endpoint is ever a label,
+and no configuration **value** appears in a log line: a generation, a JSON pointer and a bounded
+reason are all the configuration content the vocabulary allows.
+
+### Failure behaviour
+
+Every row of the design document's failure matrix has a test:
+
+| Failure | Covered by |
+|---|---|
+| Missing file at startup | `Lifecycle.StartOnAMissingFileFails` |
+| Bad JSON on reload | `Reload.InvalidJsonKeepsSnapshot` |
+| Unsupported schema version | `Loader.RejectsUnsupportedSchemaVersion` |
+| Temporary read failure | `Loader.MissingFileIsFileNotFound`, `Poller.MissingFileDoesNotSpin` |
+| Notification failure or overflow | `Notify.ObserverThrowIsIsolatedAndCounted`, `Notify.OverflowMarksDegradedAndResyncs` |
+| Disk full | `FileSinkTest.DiskFullMarksUnhealthyAppSurvives` |
+| Permission denied | `FileSinkTest.UnwritablePathFallsBackToStderr` |
+| Slow log disk | `Queue.DropsInfoWhenFull`, `Queue.BoundedWaitForError` |
+| Oversized or classified field | `Record_OversizeTruncatedAndCounted`, `Redaction.SecretAbsentFromEverySink` |
+| Shutdown with a blocked consumer | `Shutdown.QueueLossIsReportedNotHidden`, `Notify.OverflowMarksDegradedAndResyncs` |
+
+Disk-full, permission-denied, short-write and `EINTR` are injected through a `FileOps` seam. No test
+fills a real disk or changes a real permission.
+
+### What project 04 v1 does not promise
+
+- No cloud configuration sync, no remote command channel, no OTA rollout.
+- No multi-process consistency: a second process has its own instance and may run a different
+  generation.
+- No partial application of a candidate that touches a restart-only key - the whole file is refused.
+- No defaults layer, no environment overrides, no command-line key overrides. Every key is
+  mandatory and the file is the only source.
+- No credential provider, and no key in the schema holds a secret.
+- No durability. Records still queued when the process dies are lost; nothing in the API pretends
+  otherwise.
+- Change detection is a 500 ms mtime-and-size poll, so a write that preserves both is missed and
+  detection latency is up to one interval. Explicit `reload()` is the deterministic path.
+- Rotation is size-based only: no time-based retention, no compression.
+- Performance numbers from a workstation run are measurements of that workstation, not guarantees.
+
+### Platform notes
+
+Both targets build and test on Linux and on Windows. Two Windows caveats, stated rather than hidden:
+
+- `std::filesystem::permissions` only toggles the read-only attribute, so the owner-only permission
+  assertion is skipped there (it runs on Linux).
+- The filesystem timestamp has one-second resolution, which is the limit the poller shortcut
+  documents.
+
+With the MSYS2/UCRT64 toolchain, put `C:/msys64/ucrt64/bin` first on `PATH` before building or
+running tests: `gtest_discover_tests` runs each test binary at build time, and another toolchain
+earlier on `PATH` can shadow the runtime DLLs, which shows up as exit code `0xc0000139`.

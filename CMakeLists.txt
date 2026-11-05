@@ -41,6 +41,32 @@ add_subdirectory(modules/scheduler)
 add_subdirectory(apps/telemetry_timer_demo)
 add_subdirectory(apps/modem_timeout_demo)
 
+# Project 04: Configuration & Logging Service. Portable for the same reason as
+# project 03 - no POSIX call anywhere, file permissions and file stat go through
+# <filesystem> - so neither target sits inside the Linux guard above
+# (specs/004-configuration-logging-service/research.md R-00).
+#
+# nlohmann/json is pinned to the v3.11.3 *single header*, fetched by URL with a
+# SHA256, deliberately NOT through the upstream CMake project: that project
+# declares cmake_minimum_required(VERSION 3.1), which CMake 4 refuses outright.
+# Downloading one header also keeps the dependency out of every public header
+# (research R-01). The download is skipped when the file is already present and
+# its hash matches, so a configured tree rebuilds offline.
+set(TCU_NLOHMANN_DIR ${CMAKE_BINARY_DIR}/_deps/nlohmann-single)
+file(DOWNLOAD
+  https://raw.githubusercontent.com/nlohmann/json/v3.11.3/single_include/nlohmann/json.hpp
+  ${TCU_NLOHMANN_DIR}/nlohmann/json.hpp
+  EXPECTED_HASH SHA256=9bea4c8066ef4a1c206b2be5a36302f8926f7fdc6087af5d20b417d0cf103ea6
+  TLS_VERIFY ON
+)
+add_library(nlohmann_json INTERFACE)
+add_library(nlohmann_json::nlohmann_json ALIAS nlohmann_json)
+target_include_directories(nlohmann_json SYSTEM INTERFACE ${TCU_NLOHMANN_DIR})
+
+add_subdirectory(modules/logging)
+add_subdirectory(modules/config)
+add_subdirectory(apps/config_logging_demo)
+
 if(TCU_BUILD_BENCHMARKS)
   add_subdirectory(benchmarks/event_bus_bench)
   add_subdirectory(benchmarks/scheduler_bench)
@@ -65,4 +91,8 @@ if(TCU_BUILD_TESTS)
   add_subdirectory(tests/unit/scheduler)
   add_subdirectory(tests/integration/scheduler)
   add_subdirectory(tests/stress/scheduler)
+  add_subdirectory(tests/unit/logging)
+  add_subdirectory(tests/unit/config)
+  add_subdirectory(tests/integration/config_logging)
+  add_subdirectory(tests/stress/config_logging)
 endif()

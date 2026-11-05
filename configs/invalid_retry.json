@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "connectivity": {
+    "retry_base_ms": 1000,
+    "retry_max_ms": 500,
+    "max_attempts": 0
+  },
+  "telemetry": {
+    "period_ms": 5000,
+    "offline_queue_capacity": 2048
+  },
+  "logging": {
+    "level": "INFO",
+    "queue_capacity": 8192,
+    "file_max_bytes": 10485760,
+    "file_count": 5,
+    "console_enabled": true
+  },
+  "network": {
+    "cloud_endpoint": "https://mock-cloud.local",
+    "tls_required": true
+  }
+}

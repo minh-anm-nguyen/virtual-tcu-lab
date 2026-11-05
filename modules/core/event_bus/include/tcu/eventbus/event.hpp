@@ -22,9 +22,19 @@ struct NetworkStatusChanged {
   bool online;
 };
 
+// Project 04 (Configuration & Logging Service): a committed configuration
+// generation. The generation number and nothing else - spec section 22 of
+// project 04 forbids putting configuration values on the bus, because a
+// consumer must re-read the snapshot rather than trust a copy that can go
+// stale (its research R-20).
+struct ConfigChanged {
+  std::uint64_t generation;
+};
+
 // Projects 05-30 append alternatives here. Reordering existing alternatives
 // changes every EventType value and is a breaking change (research R-01).
-using EventPayload = std::variant<IgnitionChanged, VehicleSpeedUpdated, NetworkStatusChanged>;
+using EventPayload =
+    std::variant<IgnitionChanged, VehicleSpeedUpdated, NetworkStatusChanged, ConfigChanged>;
 
 using EventType = std::uint32_t;
 
