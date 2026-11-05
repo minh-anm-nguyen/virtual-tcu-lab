@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "name": "normal_drive",
+  "fixed_seed": 42,
+  "steps": [
+    { "at_ms": 0,     "action": "set_signal", "signal": "ignition",          "value": 1     },
+    { "at_ms": 0,     "action": "set_signal", "signal": "battery_voltage_v", "value": 12.6  },
+    { "at_ms": 0,     "action": "set_signal", "signal": "battery_soc_pct",   "value": 85    },
+    { "at_ms": 0,     "action": "set_signal", "signal": "door_state",        "value": 16    },
+    { "at_ms": 500,   "action": "set_signal", "signal": "speed_kmh",         "value": 0     },
+    { "at_ms": 2000,  "action": "set_signal", "signal": "speed_kmh",         "value": 20    },
+    { "at_ms": 4000,  "action": "set_signal", "signal": "speed_kmh",         "value": 40    },
+    { "at_ms": 6000,  "action": "set_signal", "signal": "speed_kmh",         "value": 60    },
+    { "at_ms": 10000, "action": "set_signal", "signal": "battery_voltage_v", "value": 14.2  }
+  ]
+}

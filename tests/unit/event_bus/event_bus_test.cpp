@@ -37,11 +37,15 @@ Event make_event(T payload) {
 static_assert(event_type_of<IgnitionChanged>() == 0);
 static_assert(event_type_of<VehicleSpeedUpdated>() == 1);
 static_assert(event_type_of<NetworkStatusChanged>() == 2);
-// Appended by project 04, at the extension point event.hpp documents. The three
-// indices above are what must not move; the count grows as later projects add
-// their payloads, so this assertion tracks the count rather than freezing it.
+// Appended by projects 04 and 05, at the extension point event.hpp documents.
+// The three indices above are what must not move; the count grows as later
+// projects add their payloads, so this assertion tracks the count rather than
+// freezing it.
 static_assert(event_type_of<ConfigChanged>() == 3);
-static_assert(std::variant_size_v<EventPayload> == 4);
+static_assert(event_type_of<VehicleSignalUpdated>() == 4);
+static_assert(event_type_of<SignalQualityChanged>() == 5);
+static_assert(event_type_of<CanLinkStatusChanged>() == 6);
+static_assert(std::variant_size_v<EventPayload> == 7);
 
 TEST(EventTypeMapping, MatchesVariantIndexAtRuntime) {
   const EventPayload payload = VehicleSpeedUpdated{42.5};

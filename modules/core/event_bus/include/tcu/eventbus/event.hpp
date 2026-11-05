@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <type_traits>
 #include <variant>
 
@@ -31,10 +32,44 @@ struct ConfigChanged {
   std::uint64_t generation;
 };
 
+// Project 05 (Virtual CAN Bus Laboratory): a decoded vehicle signal, carrying
+// the quality that says how much to trust it.
+//
+// IgnitionChanged and VehicleSpeedUpdated above are NOT reused for CAN signals:
+// neither carries a quality or a generation, so a subscriber could not tell a
+// fresh 0 km/h from a stale one - exactly what project 05's NFR-07 and its spec
+// section 6.4 forbid. They stay as they are for project 01's own demo.
+//
+// The quality and state fields are narrowed to uint8_t deliberately: the bus
+// must not depend on tcu_can's headers, so the dependency stays one-way
+// (project 05 research R-07).
+struct VehicleSignalUpdated {
+  std::string signal_name;
+  double value;
+  std::uint32_t source_can_id;
+  std::uint64_t generation;
+  std::int64_t monotonic_age_ms;
+};
+
+// One event for every quality change - stale, recovered, invalid, link lost -
+// because all four are the same fact, and project 05's B-08 requires exactly
+// one event per transition either way.
+struct SignalQualityChanged {
+  std::string signal_name;
+  std::uint8_t quality;  // tcu::can::SignalQuality
+  std::uint64_t generation;
+};
+
+struct CanLinkStatusChanged {
+  bool available;
+  std::uint8_t service_state;  // tcu::can::ServiceState
+};
+
 // Projects 05-30 append alternatives here. Reordering existing alternatives
 // changes every EventType value and is a breaking change (research R-01).
 using EventPayload =
-    std::variant<IgnitionChanged, VehicleSpeedUpdated, NetworkStatusChanged, ConfigChanged>;
+    std::variant<IgnitionChanged, VehicleSpeedUpdated, NetworkStatusChanged, ConfigChanged,
+                 VehicleSignalUpdated, SignalQualityChanged, CanLinkStatusChanged>;
 
 using EventType = std::uint32_t;
 

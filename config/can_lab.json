@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "mode": "lab_only",
+  "can": {
+    "interface": "vcan0",
+    "format": "classic_standard_11bit",
+    "rx_queue_capacity": 1024,
+    "health_check_ms": 50,
+    "drain_deadline_ms": 200,
+    "reconnect": {
+      "initial_ms": 250,
+      "max_ms": 5000,
+      "jitter_percent": 10
+    },
+    "allowed_rx_ids": [256, 257, 258, 259, 272, 513]
+  },
+  "signals": {
+    "ignition":          { "can_id": 256, "timeout_ms": 3000 },
+    "speed_kmh":         { "can_id": 257, "timeout_ms": 500  },
+    "battery_voltage_v": { "can_id": 258, "timeout_ms": 3000 },
+    "battery_soc_pct":   { "can_id": 258, "timeout_ms": 3000 },
+    "door_state":        { "can_id": 259, "timeout_ms": 3000 },
+    "heartbeat":         { "can_id": 272, "timeout_ms": 3000 },
+    "ecu_status":        { "can_id": 272, "timeout_ms": 3000 }
+  },
+  "simulator": {
+    "speed_period_ms": 100,
+    "heartbeat_period_ms": 1000,
+    "fixed_seed": 42
+  }
+}

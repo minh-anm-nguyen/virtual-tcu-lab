@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "name": "speed_signal_loss",
+  "fixed_seed": 42,
+  "steps": [
+    { "at_ms": 0,    "action": "set_signal", "signal": "ignition",  "value": 1  },
+    { "at_ms": 500,  "action": "set_signal", "signal": "speed_kmh", "value": 60 },
+    { "at_ms": 2000, "action": "pause_id",   "can_id": 257 },
+    { "at_ms": 4000, "action": "resume_id",  "can_id": 257 }
+  ]
+}

@@ -67,9 +67,29 @@ add_subdirectory(modules/logging)
 add_subdirectory(modules/config)
 add_subdirectory(apps/config_logging_demo)
 
+# Project 05: Virtual CAN Bus Laboratory. Linux only - the transport is
+# PF_CAN/SOCK_RAW/CAN_RAW with <linux/can.h>, plus eventfd(2) and poll(2),
+# none of which has a Windows equivalent
+# (specs/005-virtual-can-bus-laboratory/research.md R-00). Same reason project
+# 02 sits in a guard of its own.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  add_subdirectory(modules/can)
+  add_subdirectory(apps/tcu_can_service)
+  add_subdirectory(apps/vehicle_simulator)
+  add_subdirectory(apps/bcm_simulator)
+  add_subdirectory(apps/can_control_cli)
+else()
+  message(STATUS "Project 05 (CAN) skipped: Linux only")
+endif()
+
 if(TCU_BUILD_BENCHMARKS)
   add_subdirectory(benchmarks/event_bus_bench)
   add_subdirectory(benchmarks/scheduler_bench)
+  # Project 05's benchmark needs SocketCAN headers through tcu_can, so it sits
+  # inside the same platform guard as the library.
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_subdirectory(benchmarks/can_bench)
+  endif()
 endif()
 
 if(TCU_BUILD_TESTS)
@@ -91,6 +111,11 @@ if(TCU_BUILD_TESTS)
   add_subdirectory(tests/unit/scheduler)
   add_subdirectory(tests/integration/scheduler)
   add_subdirectory(tests/stress/scheduler)
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_subdirectory(tests/unit/can)
+    add_subdirectory(tests/integration/can)
+    add_subdirectory(tests/stress/can)
+  endif()
   add_subdirectory(tests/unit/logging)
   add_subdirectory(tests/unit/config)
   add_subdirectory(tests/integration/config_logging)
