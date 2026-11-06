@@ -1,0 +1,21 @@
+VERSION "lab-with-noise"
+
+NS_ :
+	CM_
+	BA_DEF_
+
+BS_:
+
+BU_: ECU TCU
+
+BO_ 256 VEHICLE_STATUS: 8 ECU
+ SG_ VehicleSpeed : 0|16@1+ (0.01,0) [0|250] "km/h" TCU
+
+CM_ BO_ 256 "The vehicle status message";
+CM_ SG_ 256 VehicleSpeed "Wheel-derived speed";
+BA_DEF_ BO_  "GenMsgCycleTime" INT 0 10000;
+BA_DEF_DEF_  "GenMsgCycleTime" 100;
+BA_ "GenMsgCycleTime" BO_ 256 20;
+VAL_TABLE_ OnOff 0 "Off" 1 "On" ;
+SIG_GROUP_ 256 Group1 1 : VehicleSpeed;
+EV_ SomeEnvVar: 0 [0|0] "" 0 1 DUMMY_NODE_VECTOR0 Vector__XXX;

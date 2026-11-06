@@ -1,0 +1,27 @@
+VERSION "virtual-tcu-lab-v1"
+
+NS_ :
+	CM_
+	BA_DEF_
+	BA_
+	VAL_
+
+BS_:
+
+BU_: ECU TCU
+
+BO_ 256 VEHICLE_STATUS: 8 ECU
+ SG_ VehicleSpeed : 0|16@1+ (0.01,0) [0|250] "km/h" TCU
+ SG_ Ignition : 16|1@1+ (1,0) [0|1] "" TCU
+ SG_ CabinTemp : 24|8@1- (1,-40) [-40|125] "degC" TCU
+
+BO_ 257 TORQUE_STATUS: 8 ECU
+ SG_ Torque : 7|12@0- (0.5,0) [-1024|1023.5] "Nm" TCU
+
+BO_ 258 MUX_STATUS: 8 ECU
+ SG_ Page M : 0|8@1+ (1,0) [0|255] "" TCU
+ SG_ CommonStatus : 8|8@1+ (1,0) [0|255] "" TCU
+ SG_ BatteryVoltage m1 : 16|16@1+ (0.01,0) [0|50] "V" TCU
+ SG_ MotorTemp m2 : 16|16@1- (0.1,0) [-100|100] "degC" TCU
+
+VAL_ 256 Ignition 0 "Off" 1 "On" ;

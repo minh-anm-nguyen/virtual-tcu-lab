@@ -82,6 +82,12 @@ else()
   message(STATUS "Project 05 (CAN) skipped: Linux only")
 endif()
 
+# Project 06: DBC Signal Decoder. tcu_dbc is portable - no POSIX call, so it
+# sits outside every platform guard, exactly like projects 03 and 04
+# (specs/006-dbc-signal-decoder/research.md R-00). tcu_signal links tcu_can and
+# is therefore Linux-only, in the guard below.
+add_subdirectory(modules/dbc)
+
 if(TCU_BUILD_BENCHMARKS)
   add_subdirectory(benchmarks/event_bus_bench)
   add_subdirectory(benchmarks/scheduler_bench)
@@ -120,4 +126,5 @@ if(TCU_BUILD_TESTS)
   add_subdirectory(tests/unit/config)
   add_subdirectory(tests/integration/config_logging)
   add_subdirectory(tests/stress/config_logging)
+  add_subdirectory(tests/unit/dbc)
 endif()
