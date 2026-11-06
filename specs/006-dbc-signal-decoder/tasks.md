@@ -116,15 +116,42 @@ evidence yet, which is the honest status - see the Remaining section below.
 10. **T059 partial**: `scripts/run_dbc_decoder_demo.sh` exists; the module
     README and the ADR record are not written.
 
+### Verification results, measured 2026-11-06
+
+On an i5-10300H under WSL2 Ubuntu 22.04, gcc 11.4, Debug builds:
+
+| Check | Result |
+|---|---|
+| All suites | 759 tests, 0 failures (project 05's 6 `vcan` cases skip) |
+| `dbc-unit` under ASan + UBSan + leak detection | 91/91, **no findings** |
+| Differential vs `cantools` 39.4.4 | 10,000 frames, 23,222 signals, **exact agreement** |
+| Soak, 100,000 frames | depth never above 64, counters monotonic, cache stays at one entry per signal |
+| M-01 conservation | holds at a quiescent point |
+| Reload under traffic | version only increases, service never leaves Ready |
+| Decode p99 | 2.4-7.3 us against the 200 us NFR-03 target |
+| `dbc_load` 2,000 messages | 233 ms against the 500 ms NFR-04 target |
+
+### Still unproven
+
+- **NFR-01 is only partly covered.** `dbc-unit` is clean under ASan/UBSan.
+  `signal-unit`, `dbc-integration` and `dbc-stress` have not been run under
+  sanitizers yet, and no TSan build has been made at all - which matters most,
+  because the threading is where the risk is.
+- **NFR-05 has no evidence.** Both fuzz targets are written and clang 14 is
+  available, but the budget has not been run.
+- **`vcan` cannot be exercised on this machine.** The WSL2 kernel has no `vcan`
+  module (`modprobe: Module vcan not found`), so `Vcan_EndToEnd` skips with that
+  message and `virtual_dbc_demo` was only run with `--fake`. The `--iface vcan0`
+  path is written and wired but unrun; it needs a Linux host with `vcan`.
+
 ### Remaining, in the order it should be picked up
 
-1. `tests/integration/dbc_decoder/` - race C, the Event Bus test, `Vcan_EndToEnd`,
-   and race A at its full iteration count (T006, T047, T049b, T051, T056).
-2. US11 verification - sanitizers first, because ASan/UBSan/TSan over the
-   existing 759 tests is the highest-value unrun check (T066), then the fuzz
-   targets (T062, T063), the golden matrix (T060, T061), the soak (T064) and the
-   benchmark (T065).
-3. Documentation - README, ADRs, the traceability table (T059, T067, T070).
+1. Finish T066: ASan/UBSan over `signal-unit`, `dbc-integration` and
+   `dbc-stress`, then a separate TSan build (clang, `TCU_SANITIZER_SETARCH=ON`).
+2. Run the fuzz budget: `scripts/run_dbc_fuzz.sh` (T063).
+3. Run `Vcan_EndToEnd` and the `--iface vcan0` demo on a host with `vcan`.
+4. T067 (the section 23.1 traceability table) and T070 (the post-implementation
+   reconciliation section in plan.md).
 
 ---
 
@@ -182,8 +209,8 @@ library code exists
 - [X] T003 Extend the root `CMakeLists.txt`: add `add_subdirectory(modules/dbc)` and `add_subdirectory(apps/dbc_validate)` **outside** any platform guard, and `add_subdirectory(modules/signal)`, `add_subdirectory(apps/dbc_decode)`, `add_subdirectory(apps/virtual_dbc_demo)` **inside** the existing project 05 `if(CMAKE_SYSTEM_NAME STREQUAL "Linux")` guard or a new one next to it, because `tcu_signal` links `tcu_can` (research R-00); add `benchmarks/dbc_decoder_bench` inside the existing `TCU_BUILD_BENCHMARKS` block (Linux-guarded, as `can_bench` is), `tests/unit/dbc` unguarded and `tests/unit/signal`, `tests/integration/dbc_decoder`, `tests/stress/dbc_decoder` Linux-guarded inside the existing `TCU_BUILD_TESTS` block, and declare `option(TCU_BUILD_FUZZERS "Build libFuzzer targets (clang only)" OFF)` with `add_subdirectory(fuzz/dbc)` guarded by it and by `CMAKE_CXX_COMPILER_ID MATCHES "Clang"` (research R-21). Do not restructure the project 01-05 lines
 - [X] T004 [P] Create `tests/unit/dbc/CMakeLists.txt` building one `dbc_unit_tests` target linked against `tcu_dbc` and `gtest_main`, with `target_include_directories(... PRIVATE ${CMAKE_SOURCE_DIR}/modules/dbc/src ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/tests/support)` so private headers are testable, registered with `gtest_discover_tests(... PROPERTIES LABELS "dbc-unit")`, and a `TCU_DBC_FIXTURE_DIR` compile definition pointing at `${CMAKE_SOURCE_DIR}/tests/fixtures/dbc`
 - [X] T005 [P] Create `tests/unit/signal/CMakeLists.txt` building `signal_unit_tests` the same way against `tcu_signal` plus `${CMAKE_SOURCE_DIR}/modules/signal/src`, label `signal-unit`, same fixture-dir definition
-- [ ] T006 [P] Create `tests/integration/dbc_decoder/CMakeLists.txt` building `dbc_decoder_integration_tests`, linking `tcu_signal`, `tcu_dbc`, `tcu_can`, `tcu_scheduler`, `tcu_logging`, `tcu_eventbus` and `gtest_main`, label `dbc-integration`
-- [ ] T007 [P] Create `tests/stress/dbc_decoder/CMakeLists.txt` building `dbc_decoder_stress_tests`, label `dbc-stress`
+- [X] T006 [P] Create `tests/integration/dbc_decoder/CMakeLists.txt` building `dbc_decoder_integration_tests`, linking `tcu_signal`, `tcu_dbc`, `tcu_can`, `tcu_scheduler`, `tcu_logging`, `tcu_eventbus` and `gtest_main`, label `dbc-integration`
+- [X] T007 [P] Create `tests/stress/dbc_decoder/CMakeLists.txt` building `dbc_decoder_stress_tests`, label `dbc-stress`
 - [X] T008 [P] Create `configs/virtual_tcu.dbc` as the exact lab DBC of spec section 6.1 — `VERSION "virtual-tcu-lab-v1"`, `NS_`, `BS_`, `BU_: ECU TCU`, `BO_ 256 VEHICLE_STATUS: 8 ECU` with `VehicleSpeed 0|16@1+ (0.01,0) [0|250] "km/h"`, `Ignition 16|1@1+ (1,0) [0|1] ""`, `CabinTemp 24|8@1- (1,-40) [-40|125] "degC"`; `BO_ 257 TORQUE_STATUS: 8 ECU` with `Torque 7|12@0- (0.5,0) [-1024|1023.5] "Nm"`; `BO_ 258 MUX_STATUS: 8 ECU` with `Page M 0|8@1+`, `CommonStatus 8|8@1+`, `BatteryVoltage m1 16|16@1+ (0.01,0) [0|50] "V"`, `MotorTemp m2 16|16@1- (0.1,0) [-100|100] "degC"` — plus a `VAL_ 256 Ignition 0 "Off" 1 "On" ;` line. Copy it to `tests/fixtures/dbc/virtual_tcu.dbc`. **Lab identifiers only, no OEM data**
 - [~] T009 [P] Create `configs/decoder.json` with exactly the keys and defaults of contracts/decoder_config.md section 1, and the invalid-config fixtures under `tests/fixtures/dbc/config/` — `unknown_key.json`, `out_of_range.json`, `wrong_type.json`, `fd_frame_mode.json`, `unmatched_signal_key.json` — each differing from the valid file in exactly the one way that document records. **No credential, token or key in any of them**
 - [~] T010 [P] Create the invalid DBC fixture set under `tests/fixtures/dbc/invalid/`, one file per validation class of contracts/dbc_subset.md section 4, each with a comment naming the expected code and line: `syntax_signal_before_message.dbc`, `nul_byte.dbc`, `message_id_out_of_range.dbc`, `duplicate_message_key.dbc`, `message_too_long.dbc`, `duplicate_signal_name.dbc`, `width_zero.dbc`, `width_65.dbc`, `bits_outside_payload.dbc`, `overlap_same_branch.dbc`, `overlap_unconditional.dbc`, `two_selectors.dbc`, `branch_without_selector.dbc`, `duplicate_branch_value.dbc`, `duplicate_enum_number.dbc`, `min_greater_than_max.dbc`, `factor_nan.dbc`, `sig_valtype.dbc`, `sg_mul_val.dbc`, `unknown_directive.dbc`, `val_table_reference.dbc`, and the valid-but-noisy `ignorable_statements.dbc` (comments, `BA_`, `CM_`, `SIG_GROUP_`). Also create `overlap_across_branches.dbc`, which must be **accepted** (B-19)
@@ -346,14 +373,14 @@ are isolated, and stop is ordered and bounded.
 
 - [X] T045 [P] [US7] Write `tests/unit/signal/frame_adapter_test.cpp`: `FrameAdapter_MapsCanMessage` (id, `format`, `size` from `length`, `rxTime` from `received_at` unchanged, and the view's `data` pointing at the message's own array), `FrameAdapter_MapsRemoteAndErrorKinds` (`FrameKind::Remote` -> `isRemote`, `FrameKind::Error` -> `isError`), `FrameAdapter_ExtendedFormatPreserved` (B-07 at the adapter level). Nothing here re-stamps time and nothing re-validates length — project 05 already did both
 - [X] T046 [P] [US7] Write `tests/unit/signal/service_test.cpp`: `Service_NotReadyWithoutValidDbc` (B-01 negative: cold-start failure leaves `NotReady`, every query answers `ConfigUnavailable`, no batch is published — V-05), `Service_ReadyPublishesVersionAndHash` (B-01), `Service_ObserverThrowIsolated` (B-14, NFR-08: the worker survives, `observerFailuresTotal` increments, one log line per rate-limit window), `Service_WeakObserverExpired` (a destroyed observer is skipped and unregistered, never called — FR-16), `Service_StopIsIdempotent`, `Service_StopJoinsWithinDeadline` (B-15, V-06, V-07), `Service_QueryNeverBlocksOnWorker`
-- [~] T047 [P] [US7] Write `tests/integration/dbc_decoder/pipeline_test.cpp` (`Pipeline_ReplayToCacheEndToEnd` over a scripted `FakeCanTransport`, `Pipeline_DeterministicForFixedSequence` — same file plus same fake clock yields byte-identical event and batch sequences, section 15.4 P-12) and `tests/integration/dbc_decoder/shutdown_test.cpp` (`RaceC_StopWithBlockedObserver`: race recipe C — an observer blocks on a gate, the publish queue fills, `stop(2s)` returns inside its deadline and reports `StopIncomplete` rather than blocking, and no callback runs afterwards)
+- [X] T047 [P] [US7] Write `tests/integration/dbc_decoder/pipeline_test.cpp` (`Pipeline_ReplayToCacheEndToEnd` over a scripted `FakeCanTransport`, `Pipeline_DeterministicForFixedSequence` — same file plus same fake clock yields byte-identical event and batch sequences, section 15.4 P-12) and `tests/integration/dbc_decoder/shutdown_test.cpp` (`RaceC_StopWithBlockedObserver`: race recipe C — an observer blocks on a gate, the publish queue fills, `stop(2s)` returns inside its deadline and reports `StopIncomplete` rather than blocking, and no callback runs afterwards)
 
 ### Implementation for User Story 7
 
 - [X] T048 [US7] Implement `modules/signal/include/tcu/signal/frame_adapter.hpp`: the single inline `toFrameView(const tcu::can::CanMessage&, uint32_t busId)` of contracts/signal_api.md section 1. **No frame-source interface, no replay source and no CAN fake is written** — `tcu::can::ICanTransport`, `SocketCanTransport` and `FakeCanTransport` are used as project 05 ships them (research R-22, Principle II)
 - [X] T049 [US7] Implement `modules/signal/include/tcu/signal/decoder_service.hpp` and `modules/signal/src/decoder_service.cpp`: `ISignalObserver` as spec section 8 declares it, `DecoderServiceDeps` (`std::unique_ptr<tcu::can::ICanTransport> transport`, scheduler, logger, injectable `now`), the lifecycle of data-model.md section 3.4, the single worker loop (pop, pin the snapshot once per frame, decode, commit, publish after unlocking), `weak_ptr` observer registry with exception isolation at the boundary, `metrics()`, and the fixed stop order of V-06 with the `onStopRequested` hook. Also `modules/signal/src/rate_limited_log.hpp`: a per-`(event, reason)` token bucket at `logging.rate_limit_per_reason_per_min` that attaches `suppressed_since_last` to the next emitted line (research R-17), with `tests/unit/signal/rate_limit_test.cpp::RateLimit_SuppressesAndReportsGap`
 
-- [ ] T049b [US7] Write `tests/integration/dbc_decoder/vcan_test.cpp::Vcan_EndToEnd` (DBC-013): open a `SocketCanTransport` on the configured interface, `send` the three lab frames through it, and assert the cache reports the spec section 7.3 values with quality `Valid` and one schema identity. `GTEST_SKIP()` with an explicit message when the interface does not exist, so CI without `vcan` is honest rather than green by omission — and never claim an on-wire test ran when it did not (project 05's section 18.1 rule)
+- [X] T049b [US7] Write `tests/integration/dbc_decoder/vcan_test.cpp::Vcan_EndToEnd` (DBC-013): open a `SocketCanTransport` on the configured interface, `send` the three lab frames through it, and assert the cache reports the spec section 7.3 values with quality `Valid` and one schema identity. `GTEST_SKIP()` with an explicit message when the interface does not exist, so CI without `vcan` is honest rather than green by omission — and never claim an on-wire test ran when it did not (project 05's section 18.1 rule)
 
 **Checkpoint**: the whole pipeline runs over project 05's transport — `FakeCanTransport` in tests
 and `vcan0` end to end — with one owned thread, a bounded queue and isolated observers.
@@ -367,7 +394,7 @@ and `vcan0` end to end — with one owned thread, a bounded queue and isolated o
 **Independent Test**: `ctest -L signal-unit -R Reload_` and `ctest -L dbc-integration -R RaceA_`.
 
 - [X] T050 [P] [US8] Write `tests/unit/signal/reload_test.cpp`: `Reload_FailureKeepsActiveVersion` (B-11, NFR-07: a parse error leaves version, hash and every cache entry untouched and the service `Ready` — V-11), `Reload_CommitIncrementsVersion` (V-12), `Reload_BusyRejectsSecondRequest` (V-09: `ReloadBusy`, not queued), `Reload_RateLimited` (V-13: the seventh attempt in a minute is rejected and counted without touching the snapshot), `Reload_SymlinkRejected` (`DBC_SOURCE`, R-08), `Reload_MigrationKeepsUnchangedSignals` and `Reload_MigrationResetsChangedSignals` (R-09: unchanged semantic hash keeps last-good and freshness; a changed `factor` resets that signal to `NotReceived`; a removed signal becomes `ConfigUnavailable`), `Reload_DisabledReturnsReloadDisabled`
-- [~] T051 [P] [US8] Write `tests/integration/dbc_decoder/reload_race_test.cpp::RaceA_InFlightFramePinsOldVersion` — race recipe A through `test_gate.hpp`, 10,000 iterations: the worker pins v1 and waits, the reload commits v2, the worker resumes and its batch **must** carry `dbcVersion == 1`, and the next frame carries 2 (B-12, NFR-06, P-13)
+- [X] T051 [P] [US8] Write `tests/integration/dbc_decoder/reload_race_test.cpp::RaceA_InFlightFramePinsOldVersion` — race recipe A through `test_gate.hpp`, 10,000 iterations: the worker pins v1 and waits, the reload commits v2, the worker resumes and its batch **must** carry `dbcVersion == 1`, and the next frame carries 2 (B-12, NFR-06, P-13)
 - [~] T052 [US8] Implement `modules/signal/src/reload_coordinator.hpp` and `.cpp`: debounce and rate limiting on `TimerScheduler`, parse/validate/compile entirely on a scheduler worker (never the decoder thread), `std::atomic_store` of the new `shared_ptr<const CompiledDbc>` as the single commit point, cache migration by semantic hash before the first frame decodes against the new snapshot, and the `afterReloadParse` / `beforeReloadCommit` / `afterPinSnapshot` hooks (V-10..V-13, R-14, R-15)
 - [X] T053 [US8] Wire `DecoderService::requestReload()` and `schema()` to the coordinator, emit `reload_requested`, `reload_committed` and `reload_rejected` with the fields of contracts/metrics.md section 3, and increment `dbcLoadAttemptsTotal` with the right label on each path
 
@@ -396,10 +423,10 @@ in one command.
 **Independent Test**: `ctest -L dbc-integration -R EventBus_` plus a manual
 `scripts/run_dbc_decoder_demo.sh`.
 
-- [ ] T056 [P] [US10] Write `tests/integration/dbc_decoder/eventbus_test.cpp`: `EventBus_PublishesSignalsDecoded` (FR-18: an adapter observer republishes `SignalsDecoded`, `SignalQualityChanged`, `DbcReloaded` and `DbcReloadFailed`, and a subscriber receives them in order), `EventBus_PublishFailureCounted` (a full or rejecting bus increments `eventPublishFailuresTotal` and does not stall the worker), `EventBus_NoPublishUnderCacheLock` (S-07 at the integration level)
+- [X] T056 [P] [US10] Write `tests/integration/dbc_decoder/eventbus_test.cpp`: `EventBus_PublishesSignalsDecoded` (FR-18: an adapter observer republishes `SignalsDecoded`, `SignalQualityChanged`, `DbcReloaded` and `DbcReloadFailed`, and a subscriber receives them in order), `EventBus_PublishFailureCounted` (a full or rejecting bus increments `eventPublishFailuresTotal` and does not stall the worker), `EventBus_NoPublishUnderCacheLock` (S-07 at the integration level)
 - [X] T057 [US10] Implement `apps/virtual_dbc_demo/main.cpp` and its `CMakeLists.txt`: load `configs/decoder.json`, build the service over a `SocketCanTransport` with `--iface vcan0` or a scripted `FakeCanTransport` with `--fake`, install the Event Bus adapter observer, and run the nine-step sequence of quickstart section 3 (normal, wrong length, unknown id, unknown extended id, stale, recovery, rejected reload, committed reload, overload burst, throwing and blocking observers), printing the section 20.2 expected lines. The frames the kernel refuses on `vcan0` — bad length, RTR, ERR — are injected only in `--fake` mode, and the demo says so on screen rather than implying they went on the wire
 - [ ] T058 [P] [US10] Create `tests/fixtures/dbc/capture_normal.log` in candump format for `dbc_decode --candump`, plus `tests/fixtures/dbc/invalid/overlap_reload.dbc` as the file the demo swaps in for the rejected reload
-- [~] T059 [P] [US10] Write `scripts/run_dbc_decoder_demo.sh` (configure, build, call project 05's `scripts/setup_vcan.sh` when `vcan0` is absent and the caller is root, fall back to `--fake` otherwise, run the demo, print what to look for per quickstart section 3, tear down what it created) and `modules/dbc/README.md` plus `docs/adr/006-dbc-signal-decoder.md` recording spec section 21's ADR-01..ADR-07 as accepted, each with the limitation it carries — including, in ADR-07's entry, that `vcan` is not HIL and that a successful decode is not evidence of a trustworthy sender (R-05, R-10), and an entry for R-24 recording why project 05's cache and decoder were not reused
+- [X] T059 [P] [US10] Write `scripts/run_dbc_decoder_demo.sh` (configure, build, call project 05's `scripts/setup_vcan.sh` when `vcan0` is absent and the caller is root, fall back to `--fake` otherwise, run the demo, print what to look for per quickstart section 3, tear down what it created) and `modules/dbc/README.md` plus `docs/adr/006-dbc-signal-decoder.md` recording spec section 21's ADR-01..ADR-07 as accepted, each with the limitation it carries — including, in ADR-07's entry, that `vcan` is not HIL and that a successful decode is not evidence of a trustworthy sender (R-05, R-10), and an entry for R-24 recording why project 05's cache and decoder were not reused
 
 **Checkpoint**: one command demonstrates every behaviour the spec promises, minus the `vcan`
 transport.
@@ -412,13 +439,13 @@ transport.
 
 **Independent Test**: `ctest -L dbc-stress`, `scripts/run_dbc_fuzz.sh`, and the benchmark report.
 
-- [ ] T060 [P] [US11] Write `scripts/generate_dbc_vectors.py`: given a `.dbc` fixture, a seed and a count, use `cantools` to emit `tests/fixtures/dbc/golden/*.json` records of `{message, signal, payload_hex, raw, signed_raw, physical, unit, dbc_hash}`, with the `cantools` version and the seed in each file's header, and a documented skip list for the intentional divergences of research R-20. Commit the generated files
-- [ ] T061 [P] [US11] Write `tests/integration/dbc_decoder/golden_matrix_test.cpp`: `Golden_HandComputedVectors` (the 50+ hand-written vectors of spec section 7.3 and their siblings, as data in the test file) and `Golden_GeneratedMatrix` (every committed generated vector: `raw` compared as an **integer**, `physical` with an absolute/relative tolerance, never `==` on a double — section 15.5)
-- [ ] T062 [P] [US11] Write `fuzz/dbc/fuzz_dbc_parser.cpp` (calls `loadDbcBytes` on the input, asserts only the invariant "either a database or at least one error diagnostic") and `fuzz/dbc/fuzz_frame_decoder.cpp` (derives `(busId, format, id, size, payload, rxTime)` from the input and calls `decode`, asserting no throw), with `fuzz/dbc/CMakeLists.txt` and a seed corpus copied from the valid and invalid fixtures into `tests/fixtures/dbc/corpus/`
-- [ ] T063 [P] [US11] Write `scripts/run_dbc_fuzz.sh` running each target to 1,000,000 executions or a `--max-total-time` box, with `-fsanitize=fuzzer,address,undefined`, printing the build and corpus used so the NFR-05 evidence is reproducible
-- [ ] T064 [P] [US11] Write `tests/stress/dbc_decoder/soak_test.cpp`: `Soak_HundredThousandFramesBounded` (100,000 frames through the service: queue depth never above capacity, drop counters monotonic, no growth in cache entry count, bounded time — NFR-02), `Soak_MetricConservation` (asserts M-01..M-05 at a quiescent point), `Soak_ReloadUnderTraffic` (alternating valid and invalid reloads while frames flow; version only ever increases, no batch mixes versions), all honouring `TCU_DBC_STRESS_SECONDS`
-- [ ] T065 [P] [US11] Write `benchmarks/dbc_decoder_bench/main.cpp` and its `CMakeLists.txt`: pure-decode p99/p50/max per message kind, load time for the lab DBC and for a generated 2,000-message file, and ingress-to-publish latency, printing CPU model, compiler, build type and iteration count. Reported, never asserted (research R-07)
-- [ ] T066 [US11] Run both sanitizer builds over all four labels on Linux/WSL and fix every finding: `-fsanitize=address,undefined` (GCC and clang) and `-fsanitize=thread` (clang with `TCU_SANITIZER_SETARCH=ON`), never combined. Record the exact toolchain versions used in the quickstart's sanitizer note (NFR-01)
+- [X] T060 [P] [US11] Write `scripts/generate_dbc_vectors.py`: given a `.dbc` fixture, a seed and a count, use `cantools` to emit `tests/fixtures/dbc/golden/*.json` records of `{message, signal, payload_hex, raw, signed_raw, physical, unit, dbc_hash}`, with the `cantools` version and the seed in each file's header, and a documented skip list for the intentional divergences of research R-20. Commit the generated files
+- [X] T061 [P] [US11] Write `tests/integration/dbc_decoder/golden_matrix_test.cpp`: `Golden_HandComputedVectors` (the 50+ hand-written vectors of spec section 7.3 and their siblings, as data in the test file) and `Golden_GeneratedMatrix` (every committed generated vector: `raw` compared as an **integer**, `physical` with an absolute/relative tolerance, never `==` on a double — section 15.5)
+- [X] T062 [P] [US11] Write `fuzz/dbc/fuzz_dbc_parser.cpp` (calls `loadDbcBytes` on the input, asserts only the invariant "either a database or at least one error diagnostic") and `fuzz/dbc/fuzz_frame_decoder.cpp` (derives `(busId, format, id, size, payload, rxTime)` from the input and calls `decode`, asserting no throw), with `fuzz/dbc/CMakeLists.txt` and a seed corpus copied from the valid and invalid fixtures into `tests/fixtures/dbc/corpus/`
+- [X] T063 [P] [US11] Write `scripts/run_dbc_fuzz.sh` running each target to 1,000,000 executions or a `--max-total-time` box, with `-fsanitize=fuzzer,address,undefined`, printing the build and corpus used so the NFR-05 evidence is reproducible
+- [X] T064 [P] [US11] Write `tests/stress/dbc_decoder/soak_test.cpp`: `Soak_HundredThousandFramesBounded` (100,000 frames through the service: queue depth never above capacity, drop counters monotonic, no growth in cache entry count, bounded time — NFR-02), `Soak_MetricConservation` (asserts M-01..M-05 at a quiescent point), `Soak_ReloadUnderTraffic` (alternating valid and invalid reloads while frames flow; version only ever increases, no batch mixes versions), all honouring `TCU_DBC_STRESS_SECONDS`
+- [X] T065 [P] [US11] Write `benchmarks/dbc_decoder_bench/main.cpp` and its `CMakeLists.txt`: pure-decode p99/p50/max per message kind, load time for the lab DBC and for a generated 2,000-message file, and ingress-to-publish latency, printing CPU model, compiler, build type and iteration count. Reported, never asserted (research R-07)
+- [~] T066 [US11] Run both sanitizer builds over all four labels on Linux/WSL and fix every finding: `-fsanitize=address,undefined` (GCC and clang) and `-fsanitize=thread` (clang with `TCU_SANITIZER_SETARCH=ON`), never combined. Record the exact toolchain versions used in the quickstart's sanitizer note (NFR-01)
 
 **Checkpoint**: every NFR has evidence, and the race recipes have run 10,000 iterations each under
 TSan.
@@ -428,7 +455,7 @@ TSan.
 ## Phase 14: Polish & Cross-Cutting Concerns
 
 - [ ] T067 [P] Fill in the spec section 23.1 traceability table in `specs/006-dbc-signal-decoder/` with the actual test ids, layers and evidence paths — every P0 what-if of spec section 14 mapped to an executable test (DBC-021)
-- [ ] T068 [P] Re-read contracts/metrics.md section 3 against the implementation and confirm every log event exists with exactly its listed fields, no payload byte appears in any line, and no DBC-supplied name became a metric label (Principle V, section 16.1 cardinality rule)
+- [X] T068 [P] Re-read contracts/metrics.md section 3 against the implementation and confirm every log event exists with exactly its listed fields, no payload byte appears in any line, and no DBC-supplied name became a metric label (Principle V, section 16.1 cardinality rule)
 - [ ] T069 Run `quickstart.md` end to end on a clean clone, on Linux and on Windows, and correct any command that does not work as written
 - [ ] T070 Add the "Post-implementation reconciliation" section to `plan.md` in project 04's style: what the sanitizers found, where test-first held and where it did not, whether `Vcan_EndToEnd` actually ran or skipped on this machine, and the honest status of each Definition of Done item — plus any shortcut taken during implementation in `shortcut:` form, and the standing R-24 cost that two signal caches now coexist
 

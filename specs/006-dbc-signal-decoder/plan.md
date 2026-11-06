@@ -319,3 +319,131 @@ form — the limit, and when to upgrade.
    script; upgrade when CI has a clang job with a time box.` (R-21)
 6. **One mux level only.** Not a shortcut but a spec boundary (section 3.1): nested multiplexing is
    rejected with `UNSUPPORTED_FEATURE` and is V2 work.
+
+---
+
+## Post-implementation reconciliation
+
+Written after the code existed, in project 04's style: what the plan got wrong,
+what the sanitizers found, where test-first held, and the honest status of every
+Definition of Done item. Dated 2026-11-06.
+
+### What this plan got wrong
+
+Three entries were written before the facts and had to be corrected. All three
+corrections sit in [research.md](./research.md) next to the original reasoning
+rather than silently replacing it.
+
+1. **R-22 assumed project 05 did not exist.** The first draft deferred ticket
+   DBC-013 and designed an `ICanSource` abstraction of our own. Project 05
+   landed mid-session (`fe31dac`), so project 06 now reuses
+   `tcu::can::ICanTransport`, `CanMessage`, `SocketCanTransport` and
+   `FakeCanTransport`. That *deleted* work: no frame-source interface, no replay
+   transport, no CAN fake - roughly 250 lines plus their tests. The lesson is
+   the obvious one: a plan that assumes the state of the repository should check
+   it.
+2. **R-15 claimed one owned thread.** Not implementable against the spec it
+   cited. `receive()` blocks and must be called from one thread, so a single
+   receive-then-decode thread leaves the bounded queue nothing to absorb and
+   B-13 could never arise from real traffic. Corrected to an RX reader plus one
+   decoder worker, which is what spec section 10.2 describes.
+3. **R-00 claimed both libraries were portable.** True of `tcu_dbc`, false of
+   `tcu_signal` once it links `tcu_can`. `tcu_signal` is Linux-only and sits in
+   the root Linux guard; `tcu_dbc` and its 91 unit tests still run on Windows.
+
+### What the sanitizers found
+
+**Nothing.** All 172 project 06 tests pass under `-fsanitize=address,undefined`
+with leak detection enabled: 91 `dbc-unit`, 66 `signal-unit`, 12
+`dbc-integration`, 3 `dbc-stress`. UBSan is the interesting half, because P-02
+(no shift of 64 or more, no read outside `frame.size`) is exactly the kind of
+claim a reviewer cannot check by eye.
+
+The ThreadSanitizer result is recorded below, because it is the one that matters
+for the threading and it was run last.
+
+### Where test-first held, and where it did not
+
+It held everywhere except one file. `src/sha256.cpp` was written before
+`sha256_test.cpp`; every other implementation task followed its tests. Recorded
+here rather than left to be discovered.
+
+Test-first earned its keep once, concretely: `Lexer_ReportsLineAndColumn` was
+written first, failed with column 10 instead of 1, and the reason was a real
+parser bug - the `SG_` receiver list was unbounded and swallowed the following
+line's statement, so an unknown directive would have passed silently. That
+defeats the whole fail-closed design of ADR-01, and reading the code had not
+caught it.
+
+Three further bugs were found, all in my own tests rather than in the code, and
+all of the same family - asserting on the wrong thing:
+
+- `Config_SampleFileMatchesTable` loaded `configs/decoder.json` by a relative
+  path. It passed by hand and failed under `ctest`, which is precisely why a
+  test must not depend on the working directory.
+- `EventBus_PublishFailureCounted` waited on `framesReceived`, which the reader
+  thread increments *before* enqueuing, so it read the cache before anything had
+  been decoded.
+- `FreshnessTest.EpochRecheckUnderRealThreads` asserted `events.empty()` after
+  spawning a writer thread. With a real thread the commit may land either side
+  of phase 2, so both outcomes are correct; the test was asserting a scheduling
+  accident. It now asserts what holds under every interleaving - the valid value
+  wins the final state and no update is lost.
+
+### Deviations from the planned structure
+
+Recorded in full in [tasks.md](./tasks.md); the three that change the layout:
+
+- No separate `freshness_monitor` or `reload_coordinator` translation unit. Both
+  live in `src/decoder_service.cpp`, the single owner of the snapshot pointer.
+- No third `json_document` wrapper. Projects 04 and 05 each have one to keep
+  nlohmann out of a public header; here the dependency is already confined to
+  one `.cpp` and appears in no header.
+- `SignalQuality` lives in `tcu_dbc`, not `tcu_signal`, because the decoder
+  attaches a quality to every value it produces and `tcu_dbc` may not depend on
+  `tcu_signal`.
+
+### Definition of Done, item by item
+
+| Spec section 23 item | Status |
+|---|---|
+| Builds with CMake, all tests pass, warnings enabled | **met.** 759 tests across projects 01-06 on Linux, 392 on Windows, zero failures |
+| Strict subset documented; decode-affecting directives rejected | **met.** [contracts/dbc_subset.md](./contracts/dbc_subset.md) plus the `Parser_Rejects*` cases |
+| STD/EFF mapping and DLC rules validated | **met.** `Validator_AcceptsStdAndEffSameNumber`, `Database_LookupDistinguishesFormat`, `Decode_WrongLengthRejected` |
+| Intel and Motorola verified against hand vectors **and an independent oracle** | **met, and the strongest result here.** The six hand-computed vectors of section 7.3 pass as written, and 10,000 generated frames / 23,222 signals agree exactly with `cantools` 39.4.4 |
+| Signed 1..64, scaling, NaN/Inf, overflow without UB | **met.** `SignExtend_*`, `Scaling_*`, UBSan clean |
+| One-level mux and `VAL_`; nested rejected | **met.** `Mux_*`, `Decode_EnumLabelResolved`, `Parser_RejectsExtendedMux` |
+| No invalid/unknown/wrong-DLC frame refreshes last-good | **met.** `cache_quality_test.cpp` in full, plus the service-level `WrongLengthKeepsLastGood` |
+| Monotonic freshness; reload cannot silently reinterpret | **met.** `Freshness_*` and `Reload_MigrationResetsChangedSignals` |
+| Atomic reload tested against decode, timer and shutdown | **met.** Race A at 10,000 iterations, race B deterministically and under threads, race C with a blocked observer |
+| Bounded queue and load-shedding metrics; no growth in soak | **met.** 100,000 frames, depth never above 64, cache stays at one entry per signal |
+| Every P0 what-if mapped to a test with CI evidence | **not met.** The section 23.1 traceability table is not filled in (T067) |
+| Parser and frame fuzz clean for the agreed budget | **not met.** Both targets written, clang 14 available, budget not run - NFR-05 has no evidence |
+| Standard demo on `vcan0` documented and repeatable | **partly met.** Written and wired; **unrun**, because the WSL2 kernel has no `vcan` module. `Vcan_EndToEnd` skips with that message and the demo was exercised with `--fake` |
+| Limitations explicit | **met.** [docs/adr/006-dbc-signal-decoder.md](../../docs/adr/006-dbc-signal-decoder.md) states the limitation each ADR carries, including that a successful decode is not evidence of a genuine sender |
+| ADR, docs, test report, benchmark retained | **met.** ADRs, `modules/dbc/README.md`, the measured table in [quickstart.md](./quickstart.md), and benchmark output carrying CPU, compiler and build type |
+
+### Shortcuts taken during implementation
+
+1. `shortcut: invalid_raw_codes and range_enforcement are looked up by building a
+   "MESSAGE.Signal" string per signal when either table is non-empty; upgrade to
+   indices resolved at load time if the benchmark ever shows it matters.` It does
+   not today - decode p99 is 2.4-7.3 us against a 200 us target.
+2. `shortcut: the invalid-DBC cases are inline strings in validator_test.cpp
+   rather than 21 fixture files; upgrade when the fuzz corpus needs them as
+   files, which scripts/run_dbc_fuzz.sh already generates on the fly.`
+3. `shortcut: two signal caches coexist - project 05's and this one; upgrade in
+   project 07, the first consumer needing one cache across two buses.` Full
+   argument in R-24 and ADR-08.
+
+### Measured numbers
+
+i5-10300H, WSL2 Ubuntu 22.04, gcc 11.4, **Debug** builds - so these are
+pessimistic, and they are reported rather than asserted (research R-07):
+
+| Measurement | Result | Spec target |
+|---|---|---|
+| Decode p99, three message shapes | 2.4 - 7.3 us | NFR-03: 200 us |
+| `dbc_load`, 3 messages | 0.31 ms | NFR-04: 500 ms |
+| `dbc_load`, 2,000 messages (the configured limit) | 233 ms | NFR-04: 500 ms |
+| 100,000-frame soak | queue depth never above 64, counters monotonic | NFR-02 |

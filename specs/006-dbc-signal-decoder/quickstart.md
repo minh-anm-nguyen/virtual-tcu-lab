@@ -189,20 +189,35 @@ the reload sees a complete file rather than a truncated one.
 
 ## 5. Acceptance checklist (spec section 23)
 
+**Measured status, 2026-11-06.** What has actually been run on an i5-10300H
+under WSL2 Ubuntu 22.04, gcc 11.4:
+
+| Check | Result |
+|---|---|
+| All suites, Debug | 759 tests, 0 failures (6 of project 05's `vcan` cases skip) |
+| `dbc-unit` under ASan + UBSan + leak detection | 91/91, **no findings** |
+| Differential vs `cantools` 39.4.4 | 10,000 frames, 23,222 signals, **exact agreement** |
+| Soak | 100,000 frames, queue depth never above 64, M-01 conservation holds |
+| Decode p99 (Debug build) | 2.4-7.3 us against the 200 us NFR-03 target |
+| `dbc_load` 2,000 messages (Debug) | 233 ms against the 500 ms NFR-04 target |
+| `signal-unit`, `dbc-integration`, `dbc-stress` under sanitizers | **not yet run** |
+| Fuzzing (NFR-05) | targets written, **not yet run** |
+| `vcan0` on the wire | **not possible here** - no `vcan` module in the WSL2 kernel |
+
 | DoD item | How to verify |
 |---|---|
 | Builds with CMake, all tests pass, warnings enabled | `cmake --build build` then `ctest --test-dir build` |
 | Strict subset documented; decode-affecting directives rejected | [contracts/dbc_subset.md](./contracts/dbc_subset.md), `Parser_Rejects*` |
 | STD/EFF mapping and DLC rules validated | `Database_LookupDistinguishesFormat`, `Decode_WrongLengthRejected` |
 | Intel and Motorola verified against hand vectors and an independent oracle | `BitExtractor_*Goldens`, `Golden_GeneratedMatrix` |
-| Signed 1..64, scaling, NaN/Inf, overflow without UB | `SignExtend_*`, `Scaling_*`, UBSan run |
+| Signed 1..64, scaling, NaN/Inf, overflow without UB | `SignExtend_*`, `Scaling_*`, plus the UBSan run above - clean |
 | One-level mux and `VAL_` work; nested rejected | `Mux_*`, `Decode_EnumLabelResolved`, `Parser_RejectsExtendedMux` |
 | No invalid/unknown/wrong-DLC frame refreshes last-good | `Cache_InvalidKeepsLastGood`, `Cache_OutOfOrderFrameIgnored` |
 | Monotonic freshness; reload cannot silently reinterpret | `Freshness_ExactDeadlineIsStale`, `Reload_MigrationResetsChangedSignals` |
 | Atomic reload tested against decode, timer and shutdown | `RaceA_*`, `RaceB_*`, `RaceC_*`, 10,000 iterations each |
 | Bounded queue and load-shedding metrics; no growth in soak | `Queue_*`, `Soak_HundredThousandFramesBounded`, `Soak_MetricConservation` |
 | Every P0 what-if mapped to a test with CI evidence | the traceability tables in [plan.md](./plan.md) plus the section 23.1 table filled in at implementation |
-| Parser and frame fuzz clean for the agreed budget | `scripts/run_dbc_fuzz.sh` (Linux + clang) |
-| Standard demo on `vcan0` documented and repeatable | section 3 above, over project 05's `SocketCanTransport` plus `scripts/setup_vcan.sh`; `Vcan_EndToEnd` covers it in CI when the interface exists and skips with a message when it does not |
+| Parser and frame fuzz clean for the agreed budget | **unmet.** `scripts/run_dbc_fuzz.sh` exists and clang 14 is available, but the budget has not been run, so NFR-05 has no evidence |
+| Standard demo on `vcan0` documented and repeatable | **partly met.** `virtual_dbc_demo --iface vcan0` and `Vcan_EndToEnd` are written and wired, but neither has been *run*: the WSL2 kernel on the development machine has no `vcan` module (`modprobe: Module vcan not found`), so the test skips with that message and the demo was exercised with `--fake`. Needs a Linux host with `vcan` to close |
 | Limitations explicit | section 4 above, plus the "Not in v1" section of each contract |
 | ADR, docs, test report, benchmark retained | spec section 21 ADRs, `benchmarks/dbc_decoder_bench` output committed with CPU/compiler noted |
