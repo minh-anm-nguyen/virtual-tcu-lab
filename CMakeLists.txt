@@ -97,6 +97,8 @@ add_subdirectory(apps/dbc_decode)
 if(TCU_BUILD_BENCHMARKS)
   add_subdirectory(benchmarks/event_bus_bench)
   add_subdirectory(benchmarks/scheduler_bench)
+  # Project 06's benchmark links only tcu_dbc, so it stays portable.
+  add_subdirectory(benchmarks/dbc_decoder_bench)
   # Project 05's benchmark needs SocketCAN headers through tcu_can, so it sits
   # inside the same platform guard as the library.
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -135,5 +137,7 @@ if(TCU_BUILD_TESTS)
   add_subdirectory(tests/unit/dbc)
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_subdirectory(tests/unit/signal)
+    add_subdirectory(tests/integration/dbc_decoder)
+    add_subdirectory(tests/stress/dbc_decoder)
   endif()
 endif()

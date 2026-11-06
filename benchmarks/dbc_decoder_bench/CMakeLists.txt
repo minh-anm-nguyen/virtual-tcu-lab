@@ -1,0 +1,5 @@
+add_executable(dbc_decoder_bench main.cpp)
+target_link_libraries(dbc_decoder_bench PRIVATE tcu_dbc)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(dbc_decoder_bench PRIVATE -Wall -Wextra)
+endif()
