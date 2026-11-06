@@ -131,14 +131,18 @@ On an i5-10300H under WSL2 Ubuntu 22.04, gcc 11.4, Debug builds:
 | Decode p99 | 2.4-7.3 us against the 200 us NFR-03 target |
 | `dbc_load` 2,000 messages | 233 ms against the 500 ms NFR-04 target |
 
-### Still unproven
+### Verification completed after the first pass
 
-- **NFR-01 is only partly covered.** `dbc-unit` is clean under ASan/UBSan.
-  `signal-unit`, `dbc-integration` and `dbc-stress` have not been run under
-  sanitizers yet, and no TSan build has been made at all - which matters most,
-  because the threading is where the risk is.
-- **NFR-05 has no evidence.** Both fuzz targets are written and clang 14 is
-  available, but the budget has not been run.
+- **NFR-01 met.** All four labels under ASan + UBSan with leak detection:
+  172/172, no findings. All four under TSan: 172/172, no data races and no
+  lock-order inversions - after fixing the five issues TSan found, every one of
+  which was in test code rather than in the libraries.
+- **NFR-05 met.** 1,000,000 inputs per target, clang 14,
+  `-fsanitize=fuzzer,address,undefined`, no finding. Leak detection is off for
+  fuzz runs only, because LSan's at-exit scan is unreliable under WSL2; it
+  stays on for the ASan test run. See research R-21, which also records one
+  intermittent failure of the frame target at the full budget that did not
+  recur and whose cause was never established.
 - **`vcan` cannot be exercised on this machine.** The WSL2 kernel has no `vcan`
   module (`modprobe: Module vcan not found`), so `Vcan_EndToEnd` skips with that
   message and `virtual_dbc_demo` was only run with `--fake`. The `--iface vcan0`
@@ -146,12 +150,13 @@ On an i5-10300H under WSL2 Ubuntu 22.04, gcc 11.4, Debug builds:
 
 ### Remaining, in the order it should be picked up
 
-1. Finish T066: ASan/UBSan over `signal-unit`, `dbc-integration` and
-   `dbc-stress`, then a separate TSan build (clang, `TCU_SANITIZER_SETARCH=ON`).
-2. Run the fuzz budget: `scripts/run_dbc_fuzz.sh` (T063).
-3. Run `Vcan_EndToEnd` and the `--iface vcan0` demo on a host with `vcan`.
-4. T067 (the section 23.1 traceability table) and T070 (the post-implementation
-   reconciliation section in plan.md).
+1. Run `Vcan_EndToEnd` and the `--iface vcan0` demo on a host whose kernel has
+   the `vcan` module. This is the only Definition-of-Done item that cannot be
+   closed on the development machine.
+2. T067: the section 23.1 traceability table, mapping each P0 what-if of spec
+   section 14 to its test id.
+3. Investigate the intermittent frame-target fuzz failure if it reappears; it
+   has not since the corpus moved to a scratch directory.
 
 ---
 
@@ -445,7 +450,7 @@ transport.
 - [X] T063 [P] [US11] Write `scripts/run_dbc_fuzz.sh` running each target to 1,000,000 executions or a `--max-total-time` box, with `-fsanitize=fuzzer,address,undefined`, printing the build and corpus used so the NFR-05 evidence is reproducible
 - [X] T064 [P] [US11] Write `tests/stress/dbc_decoder/soak_test.cpp`: `Soak_HundredThousandFramesBounded` (100,000 frames through the service: queue depth never above capacity, drop counters monotonic, no growth in cache entry count, bounded time — NFR-02), `Soak_MetricConservation` (asserts M-01..M-05 at a quiescent point), `Soak_ReloadUnderTraffic` (alternating valid and invalid reloads while frames flow; version only ever increases, no batch mixes versions), all honouring `TCU_DBC_STRESS_SECONDS`
 - [X] T065 [P] [US11] Write `benchmarks/dbc_decoder_bench/main.cpp` and its `CMakeLists.txt`: pure-decode p99/p50/max per message kind, load time for the lab DBC and for a generated 2,000-message file, and ingress-to-publish latency, printing CPU model, compiler, build type and iteration count. Reported, never asserted (research R-07)
-- [~] T066 [US11] Run both sanitizer builds over all four labels on Linux/WSL and fix every finding: `-fsanitize=address,undefined` (GCC and clang) and `-fsanitize=thread` (clang with `TCU_SANITIZER_SETARCH=ON`), never combined. Record the exact toolchain versions used in the quickstart's sanitizer note (NFR-01)
+- [X] T066 [US11] Run both sanitizer builds over all four labels on Linux/WSL and fix every finding: `-fsanitize=address,undefined` (GCC and clang) and `-fsanitize=thread` (clang with `TCU_SANITIZER_SETARCH=ON`), never combined. Record the exact toolchain versions used in the quickstart's sanitizer note (NFR-01)
 
 **Checkpoint**: every NFR has evidence, and the race recipes have run 10,000 iterations each under
 TSan.

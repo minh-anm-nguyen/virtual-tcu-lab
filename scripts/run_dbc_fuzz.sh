@@ -12,7 +12,6 @@ cd "$(dirname "$0")/.."
 
 RUNS="${1:-1000000}"
 BUILD_DIR="${2:-build-fuzz-wsl}"
-CORPUS_DIR="tests/fixtures/dbc/corpus"
 
 if ! command -v clang++ >/dev/null 2>&1; then
   echo "clang++ is required for libFuzzer. Install it, or run the sanitizer"
@@ -27,21 +26,44 @@ cmake -S . -B "$BUILD_DIR" \
   -DTCU_BUILD_FUZZERS=ON -DTCU_BUILD_TESTS=OFF -DTCU_BUILD_BENCHMARKS=OFF >/dev/null
 cmake --build "$BUILD_DIR" --target fuzz_dbc_parser fuzz_frame_decoder -j"$(nproc)"
 
-mkdir -p "$CORPUS_DIR/parser" "$CORPUS_DIR/frames"
-# Seed the parser corpus from the fixtures: a fuzzer that starts from valid
-# input reaches the interesting paths far sooner than one starting from noise.
-cp -f configs/virtual_tcu.dbc "$CORPUS_DIR/parser/" 2>/dev/null || true
-cp -f tests/fixtures/dbc/virtual_tcu.dbc "$CORPUS_DIR/parser/" 2>/dev/null || true
-cp -f tests/fixtures/dbc/invalid/*.dbc "$CORPUS_DIR/parser/" 2>/dev/null || true
-printf '\x01\x00\x00\x08\x10\x27\x01\x00\x50\x00\x00\x00' > "$CORPUS_DIR/frames/seed_vehicle"
-printf '\x01\x01\x00\x08\xAB\xC0\x00\x00\x00\x00\x00\x00' > "$CORPUS_DIR/frames/seed_torque"
-printf '\x01\x02\x00\x08\x01\x7F\xD2\x04\x00\x00\x00\x00' > "$CORPUS_DIR/frames/seed_mux"
+# libFuzzer MERGES the inputs it finds interesting back into the corpus
+# directory it is given, so it is given a scratch directory that is thrown away.
+# Two reasons, and neither is about speed: a fuzz run must not leave hundreds of
+# untracked files in the repository, and a run must start from the same seeds
+# every time. Accumulated leftovers made one earlier failure impossible to
+# attribute, which is its own argument.
+WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/tcu-dbc-fuzz-XXXXXX")"
+trap 'rm -rf "$WORK_DIR"' EXIT
+mkdir -p "$WORK_DIR/parser" "$WORK_DIR/frames"
+
+# Seed from the committed fixtures: a fuzzer that starts from valid input
+# reaches the interesting paths far sooner than one starting from noise.
+cp -f configs/virtual_tcu.dbc "$WORK_DIR/parser/" 2>/dev/null || true
+cp -f tests/fixtures/dbc/invalid/*.dbc "$WORK_DIR/parser/" 2>/dev/null || true
+printf '\x01\x00\x00\x08\x10\x27\x01\x00\x50\x00\x00\x00' > "$WORK_DIR/frames/seed_vehicle"
+printf '\x01\x01\x00\x08\xAB\xC0\x00\x00\x00\x00\x00\x00' > "$WORK_DIR/frames/seed_torque"
+printf '\x01\x02\x00\x08\x01\x7F\xD2\x04\x00\x00\x00\x00' > "$WORK_DIR/frames/seed_mux"
+
+# LeakSanitizer is disabled here, and that is a deliberate, narrow decision.
+#
+# On WSL2 LSan's at-exit scan segfaults inside libFuzzer's exit path - the
+# target runs the input correctly (verified under gdb: "Executed ... in 6 ms")
+# and then dies in the leak check, which looks exactly like a crash found by
+# fuzzing and is not one. LSan needs process introspection the WSL2 kernel does
+# not fully provide.
+#
+# Leaks are still covered: the ASan build of the test suites runs with leak
+# detection ON and is clean. What is given up here is leak detection on
+# fuzzer-generated inputs specifically, and that limitation belongs in the
+# evidence rather than hidden in an environment variable.
+export ASAN_OPTIONS="detect_leaks=0:${ASAN_OPTIONS:-}"
+export UBSAN_OPTIONS="print_stacktrace=1:${UBSAN_OPTIONS:-}"
 
 STATUS=0
 for target in fuzz_dbc_parser fuzz_frame_decoder; do
   case "$target" in
-    fuzz_dbc_parser) corpus="$CORPUS_DIR/parser" ;;
-    *) corpus="$CORPUS_DIR/frames" ;;
+    fuzz_dbc_parser) corpus="$WORK_DIR/parser" ;;
+    *) corpus="$WORK_DIR/frames" ;;
   esac
   echo
   echo "== $target: $RUNS runs, corpus $corpus =="
@@ -58,7 +80,9 @@ if [ "$STATUS" = "0" ]; then
   echo "Both targets completed with no sanitizer finding."
   echo "Record the build, the corpus and the run count alongside this result:"
   echo "  clang: $(clang++ --version | head -1)"
-  echo "  runs:  $RUNS per target"
+  echo "  runs:  $RUNS per target (or the $MAX_TOTAL_TIME s cap, whichever came first)"
+  echo "  note:  leak detection was OFF for these runs - see the comment above"
+  echo "  corpus: seeded from the committed fixtures into a scratch dir, discarded after"
 else
   echo "At least one target failed. NFR-05 is NOT satisfied until this is clean."
 fi

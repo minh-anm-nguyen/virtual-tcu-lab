@@ -9,6 +9,12 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(TCU_BUILD_TESTS "Build tests" ON)
 option(TCU_BUILD_BENCHMARKS "Build benchmarks" ON)
 
+# Project 06's libFuzzer targets. OFF by default and clang-only: libFuzzer
+# brings its own main and needs -fsanitize=fuzzer, so a default GCC or MSVC
+# build must not try to build them (specs/006-dbc-signal-decoder/research.md
+# R-21). They are deliberately not CTest cases; the budget is a script.
+option(TCU_BUILD_FUZZERS "Build libFuzzer targets for project 06 (clang only)" OFF)
+
 option(TCU_SANITIZER_SETARCH
        "Run test binaries under 'setarch -R'. ThreadSanitizer's fixed shadow mapping clashes with the high-entropy ASLR of recent kernels (research R-00 addendum); without this a TSan build aborts at startup."
        OFF)
@@ -103,6 +109,14 @@ if(TCU_BUILD_BENCHMARKS)
   # inside the same platform guard as the library.
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_subdirectory(benchmarks/can_bench)
+  endif()
+endif()
+
+if(TCU_BUILD_FUZZERS)
+  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    add_subdirectory(fuzz/dbc)
+  else()
+    message(WARNING "TCU_BUILD_FUZZERS=ON ignored: libFuzzer needs clang, this is ${CMAKE_CXX_COMPILER_ID}")
   endif()
 endif()
 

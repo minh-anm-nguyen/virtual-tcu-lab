@@ -442,9 +442,32 @@ comparison script skips those files and the divergence list lives next to the fi
 
 **Decision**: `TCU_BUILD_FUZZERS` (default OFF) adds `fuzz/fuzz_dbc_parser.cpp` and
 `fuzz/fuzz_frame_decoder.cpp`, built only with clang and `-fsanitize=fuzzer,address,undefined`.
-A seed corpus of the valid and invalid `.dbc` fixtures is checked in. The NFR-05 budget — 1,000,000
-executions, or the documented CI time box, whichever comes first — is a script
-(`scripts/run_dbc_fuzz.sh`), not a CTest case.
+The seed corpus is **derived at run time** from the committed fixtures
+(`configs/virtual_tcu.dbc` and `tests/fixtures/dbc/invalid/*.dbc`) into a scratch directory, not
+checked in: libFuzzer merges new inputs into whatever corpus directory it is given, and a fuzz run
+must not rewrite the repository. The NFR-05 budget — 1,000,000 executions, or the documented time
+box, whichever comes first — is a script (`scripts/run_dbc_fuzz.sh`), not a CTest case.
+
+**Correction, 2026-11-06**: the first draft said "a seed corpus ... is checked in". It never was —
+`tests/fixtures/dbc/corpus/` was untracked, and whatever sat in it was leftovers from the last run.
+Deriving the seeds from the fixtures is both what the script does and the better behaviour.
+
+**Two environment findings, from running it rather than writing it:**
+
+- **LeakSanitizer must be off for fuzz runs on WSL2.** Its at-exit scan segfaults inside
+  libFuzzer's exit path; under `gdb` the input is seen to execute correctly first ("Executed ... in
+  6 ms"). That looks exactly like a crash found by fuzzing and is not one. Leaks stay covered by the
+  ASan test run, which has leak detection on and is clean; what is given up is leak detection on
+  fuzzer-generated inputs specifically.
+- **One earlier failure was never attributed, and the corpus is why.** A second run showed
+  `fuzz_frame_decoder` segfaulting where it had previously completed 1,000,000 inputs cleanly. By
+  then the corpus directory in the repository had accumulated the units of every prior run, so the
+  input set was no longer the one that had passed, and the triggering file was discarded before it
+  could be isolated. The honest statement is that the cause is unknown; it has not recurred.
+  The script now seeds a `mktemp -d` scratch directory from the committed fixtures and throws it
+  away, so every run starts from the same inputs and the repository is never written to. That is
+  the fix for the *ambiguity*, which was the real defect - a run whose result cannot be attributed
+  is not evidence.
 
 **Rationale**: libFuzzer needs a `main` the test framework also wants and a compiler the default
 build does not require. Keeping it opt-in means `cmake --build` stays green on GCC and on Windows,

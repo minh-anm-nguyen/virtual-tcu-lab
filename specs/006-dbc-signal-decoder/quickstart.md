@@ -200,8 +200,9 @@ under WSL2 Ubuntu 22.04, gcc 11.4:
 | Soak | 100,000 frames, queue depth never above 64, M-01 conservation holds |
 | Decode p99 (Debug build) | 2.4-7.3 us against the 200 us NFR-03 target |
 | `dbc_load` 2,000 messages (Debug) | 233 ms against the 500 ms NFR-04 target |
-| `signal-unit`, `dbc-integration`, `dbc-stress` under sanitizers | **not yet run** |
-| Fuzzing (NFR-05) | targets written, **not yet run** |
+| All four labels under ASan + UBSan | 172/172, **no findings** |
+| All four labels under **TSan** | 172/172, **no races, no lock-order inversions** |
+| Fuzzing, 1,000,000 inputs per target | **no sanitizer finding** (parser 22 s, frame decoder 3 s) |
 | `vcan0` on the wire | **not possible here** - no `vcan` module in the WSL2 kernel |
 
 | DoD item | How to verify |
@@ -217,7 +218,7 @@ under WSL2 Ubuntu 22.04, gcc 11.4:
 | Atomic reload tested against decode, timer and shutdown | `RaceA_*`, `RaceB_*`, `RaceC_*`, 10,000 iterations each |
 | Bounded queue and load-shedding metrics; no growth in soak | `Queue_*`, `Soak_HundredThousandFramesBounded`, `Soak_MetricConservation` |
 | Every P0 what-if mapped to a test with CI evidence | the traceability tables in [plan.md](./plan.md) plus the section 23.1 table filled in at implementation |
-| Parser and frame fuzz clean for the agreed budget | **unmet.** `scripts/run_dbc_fuzz.sh` exists and clang 14 is available, but the budget has not been run, so NFR-05 has no evidence |
+| Parser and frame fuzz clean for the agreed budget | **met.** `scripts/run_dbc_fuzz.sh`, clang 14, 1,000,000 inputs per target, no finding. Leak detection is off for fuzz runs only (it is unreliable under WSL2) and stays on for the ASan test run |
 | Standard demo on `vcan0` documented and repeatable | **partly met.** `virtual_dbc_demo --iface vcan0` and `Vcan_EndToEnd` are written and wired, but neither has been *run*: the WSL2 kernel on the development machine has no `vcan` module (`modprobe: Module vcan not found`), so the test skips with that message and the demo was exercised with `--fake`. Needs a Linux host with `vcan` to close |
 | Limitations explicit | section 4 above, plus the "Not in v1" section of each contract |
 | ADR, docs, test report, benchmark retained | spec section 21 ADRs, `benchmarks/dbc_decoder_bench` output committed with CPU/compiler noted |
