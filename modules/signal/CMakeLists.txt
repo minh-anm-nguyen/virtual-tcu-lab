@@ -9,6 +9,7 @@ add_library(tcu_signal STATIC
   src/signal_cache.cpp
   src/decoder_config.cpp
   src/decoder_metrics.cpp
+  src/decoder_service.cpp
 )
 
 target_include_directories(tcu_signal PUBLIC include PRIVATE src)

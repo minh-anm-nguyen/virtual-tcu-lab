@@ -4,6 +4,8 @@ add_executable(signal_unit_tests
   freshness_test.cpp
   config_test.cpp
   queue_test.cpp
+  service_test.cpp
+  reload_test.cpp
 )
 
 target_link_libraries(signal_unit_tests PRIVATE tcu_signal tcu_dbc tcu_can gtest_main)
@@ -16,6 +18,7 @@ target_include_directories(signal_unit_tests PRIVATE
 
 target_compile_definitions(signal_unit_tests PRIVATE
   TCU_DBC_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures/dbc"
+  TCU_CONFIG_DIR="${CMAKE_SOURCE_DIR}/configs"
 )
 
 gtest_discover_tests(signal_unit_tests PROPERTIES LABELS "signal-unit")

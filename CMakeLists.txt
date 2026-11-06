@@ -81,6 +81,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   # Project 06's lifecycle half links tcu_can, so it lives here too
   # (specs/006-dbc-signal-decoder/research.md R-00, R-22).
   add_subdirectory(modules/signal)
+  add_subdirectory(apps/virtual_dbc_demo)
 else()
   message(STATUS "Project 05 (CAN) skipped: Linux only")
 endif()

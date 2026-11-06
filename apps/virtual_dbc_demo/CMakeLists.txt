@@ -1,0 +1,5 @@
+add_executable(virtual_dbc_demo main.cpp)
+target_link_libraries(virtual_dbc_demo PRIVATE tcu_signal tcu_dbc tcu_can tcu_eventbus tcu_scheduler)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(virtual_dbc_demo PRIVATE -Wall -Wextra)
+endif()

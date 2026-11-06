@@ -49,9 +49,11 @@ std::string withReplacement(const std::string& from, const std::string& to) {
 }
 
 TEST(Config_SampleFileMatchesTable, ShippedFileLoadsAndEveryValueIsInRange) {
+  // Absolute path from CMake: a test that depends on the working directory
+  // passes by hand and fails under ctest, which is how this was caught.
   // V-14: one table is only a single source of truth if the file we ship
   // cannot drift away from it.
-  const auto result = tcu::signal::loadDecoderConfig("configs/decoder.json");
+  const auto result = tcu::signal::loadDecoderConfig(std::string(TCU_CONFIG_DIR) + "/decoder.json");
   ASSERT_TRUE(result.ok) << (result.errors.empty()
                                  ? ""
                                  : result.errors[0].pointer + " " +
