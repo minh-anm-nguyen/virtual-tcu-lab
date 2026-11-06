@@ -49,6 +49,9 @@ tcu::signal::FreshnessConfig freshnessOf(long long defaultMs) {
 
 class FreshnessTest : public ::testing::Test {
  protected:
+  // Belt and braces: each test that installs a hook also clears it before its
+  // callable goes out of scope. TearDown runs after the test body's locals are
+  // already gone, so it cannot be the only clear.
   void TearDown() override { tcu::signal::detail::testHooks().clear(); }
 };
 
@@ -146,14 +149,16 @@ TEST_F(FreshnessTest, EpochRecheckBeatsLateTimer) {
   cache.commit(validAt(1000, 100.0));
 
   bool committed = false;
-  tcu::signal::detail::testHooks().freshnessSampled = [&] {
+  tcu::signal::detail::Hook hook = [&] {
     // Runs between phase 1 and phase 2 of the scan, on this same thread: no
     // gate is needed to order it, which is why this case is deterministic.
     cache.commit(validAt(1490, 120.0));
     committed = true;
   };
+  tcu::signal::detail::testHooks().freshnessSampled.set(&hook);
 
   const auto events = cache.scanFreshness(at(1500));
+  tcu::signal::detail::testHooks().freshnessSampled.clear();
   EXPECT_TRUE(committed);
   EXPECT_TRUE(events.empty()) << "a stale verdict from before the commit must be dropped";
 
@@ -181,12 +186,14 @@ TEST_F(FreshnessTest, EpochRecheckUnderRealThreads) {
     cache.commit(validAt(1000, 100.0));
 
     std::thread writer;
-    tcu::signal::detail::testHooks().freshnessSampled = [&] {
+    tcu::signal::detail::Hook hook = [&] {
       writer = std::thread([&] { cache.commit(validAt(1490, 120.0)); });
     };
+    tcu::signal::detail::testHooks().freshnessSampled.set(&hook);
     (void)cache.scanFreshness(at(1500));
+    // Cleared and joined before `hook` dies at the end of this iteration.
+    tcu::signal::detail::testHooks().freshnessSampled.clear();
     if (writer.joinable()) writer.join();
-    tcu::signal::detail::testHooks().clear();
 
     const auto snapshot = cache.get(speedKey(), at(1500));
     ASSERT_TRUE(snapshot.has_value()) << "iteration " << iteration;

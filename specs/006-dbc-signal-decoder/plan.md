@@ -359,8 +359,36 @@ with leak detection enabled: 91 `dbc-unit`, 66 `signal-unit`, 12
 (no shift of 64 or more, no read outside `frame.size`) is exactly the kind of
 claim a reviewer cannot check by eye.
 
-The ThreadSanitizer result is recorded below, because it is the one that matters
-for the threading and it was run last.
+**ThreadSanitizer found five things, and all five were in my own test code.**
+That is worth stating plainly, because the first reading of the report was
+wrong: the stack for the lock-order inversion runs through project 01's
+`EventBus`, and I initially recorded it as a pre-existing defect there. It is
+not. The second mutex in the cycle is at a stack address - the test's own.
+
+- **Four data races on the `FaultHooks` global.** It held `std::function`
+  members, which worker threads read on every frame while the test thread
+  assigned and cleared them. A data race on the function object's internals,
+  however carefully the test is written. Fixed at the root rather than per call
+  site: each slot is now `std::atomic<std::function<void()>*>`, which is
+  race-free by construction and cheaper on the hot path than `std::function`'s
+  own bool conversion. Two test harnesses also cleared the hooks *before*
+  stopping the threads that read them; that order is reversed, and hook objects
+  are now declared before the harness so they outlive it.
+- **One lock-order inversion, created by my Event Bus test.** It held its own
+  mutex across `subscription.unsubscribe()`, while the dispatcher holds the
+  subscription's `in_flight` mutex and then takes the test's mutex inside the
+  handler - closing the cycle. Project 01 documents that `unsubscribe()` waits
+  out an in-flight invocation, which is exactly why a caller must not hold a
+  mutex the handler also takes. Fixed by copying under the lock and releasing
+  before unsubscribing.
+
+After those fixes: **172 tests, 0 failures, 0 ThreadSanitizer warnings** under
+`-fsanitize=thread` with clang 14 and `TCU_SANITIZER_SETARCH=ON`.
+
+The production code came out of this with no change at all, which is the result
+worth having - but only because TSan was run. None of the five would have been
+caught by reading, and the two test-harness ordering bugs would have surfaced
+later as intermittent CI failures that looked like flakiness.
 
 ### Where test-first held, and where it did not
 
@@ -418,6 +446,7 @@ Recorded in full in [tasks.md](./tasks.md); the three that change the layout:
 | Atomic reload tested against decode, timer and shutdown | **met.** Race A at 10,000 iterations, race B deterministically and under threads, race C with a blocked observer |
 | Bounded queue and load-shedding metrics; no growth in soak | **met.** 100,000 frames, depth never above 64, cache stays at one entry per signal |
 | Every P0 what-if mapped to a test with CI evidence | **not met.** The section 23.1 traceability table is not filled in (T067) |
+| Zero sanitizer findings (NFR-01) | **met.** ASan + UBSan + leak detection: 172 tests, no findings. TSan: 172 tests, no findings, after fixing the five issues it found in the test code |
 | Parser and frame fuzz clean for the agreed budget | **not met.** Both targets written, clang 14 available, budget not run - NFR-05 has no evidence |
 | Standard demo on `vcan0` documented and repeatable | **partly met.** Written and wired; **unrun**, because the WSL2 kernel has no `vcan` module. `Vcan_EndToEnd` skips with that message and the demo was exercised with `--fake` |
 | Limitations explicit | **met.** [docs/adr/006-dbc-signal-decoder.md](../../docs/adr/006-dbc-signal-decoder.md) states the limitation each ADR carries, including that a successful decode is not evidence of a genuine sender |

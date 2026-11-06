@@ -110,9 +110,24 @@ TEST(EventBus_PublishesSignalsDecoded, SubscriberSeesTheDecodedValues) {
     return seen.size() >= 2;  // VehicleSpeed and Ignition
   }));
 
-  std::lock_guard<std::mutex> lock(mutex);
+  // Copy under the lock, then RELEASE it before unsubscribing.
+  //
+  // Holding this mutex across unsubscribe() is a lock-order inversion, and
+  // ThreadSanitizer caught it: the dispatcher holds the subscription's
+  // in_flight mutex and then takes this one inside the handler, while
+  // unsubscribe() waits for in_flight - so doing it the other way round closes
+  // the cycle. The bug was mine, not the bus's; project 01 documents that
+  // unsubscribe waits out an in-flight invocation, which is exactly why a
+  // caller must not hold a mutex the handler also takes.
+  std::vector<tcu::eventbus::VehicleSignalUpdated> collected;
+  {
+    std::lock_guard<std::mutex> lock(mutex);
+    collected = seen;
+  }
+  subscription.unsubscribe();
+
   bool sawSpeed = false;
-  for (const auto& payload : seen) {
+  for (const auto& payload : collected) {
     if (payload.signal_name != "VehicleSpeed") continue;
     sawSpeed = true;
     EXPECT_DOUBLE_EQ(payload.value, 100.0);
@@ -120,7 +135,6 @@ TEST(EventBus_PublishesSignalsDecoded, SubscriberSeesTheDecodedValues) {
     EXPECT_EQ(payload.generation, 1u) << "the DBC version travels with the value";
   }
   EXPECT_TRUE(sawSpeed);
-  subscription.unsubscribe();
 }
 
 TEST(EventBus_PublishesSignalsDecoded, QualityChangesReachTheBus) {

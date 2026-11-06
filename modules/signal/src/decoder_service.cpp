@@ -163,7 +163,7 @@ void DecoderService::Impl::handleFrame(const tcu::can::CanMessage& message) {
   // Pinned ONCE per frame, so a batch cannot mix schema versions even if a
   // reload commits mid-decode (invariant P-13, research R-14).
   const std::shared_ptr<const dbc::CompiledDbc> db = pin();
-  if (detail::testHooks().afterPinSnapshot) detail::testHooks().afterPinSnapshot();
+  detail::testHooks().afterPinSnapshot();
   if (db == nullptr) return;
 
   const dbc::CanFrameView view = toFrameView(message, deps.busId);
@@ -220,7 +220,7 @@ void DecoderService::Impl::workerLoop() {
 
 void DecoderService::Impl::dispatchEvents(const std::vector<QualityEvent>& events) {
   if (events.empty()) return;
-  if (detail::testHooks().beforeEventPublish) detail::testHooks().beforeEventPublish();
+  detail::testHooks().beforeEventPublish();
 
   for (const auto& event : events) {
     if (event.to == dbc::SignalQuality::Stale) metrics.add(metrics.staleTransitions);
@@ -282,7 +282,7 @@ void DecoderService::Impl::runReload() {
   // Runs on a scheduler worker, never on the decoder thread: parse, validate
   // and compile all happen off the hot path (invariant V-10, research R-15).
   const auto loaded = dbc::loadDbcFile(config.dbcPath, config.parseLimits());
-  if (detail::testHooks().afterReloadParse) detail::testHooks().afterReloadParse();
+  detail::testHooks().afterReloadParse();
 
   if (!loaded.ok()) {
     metrics.countLoad(loaded.firstWithCode(dbc::DbcErrorCode::DbcSource) != nullptr
@@ -330,7 +330,7 @@ void DecoderService::Impl::runReload() {
       nextVersion, loaded.db->hash(), loaded.db->sourcePath(), loaded.db->messages(),
       loaded.db->stats());
 
-  if (detail::testHooks().beforeReloadCommit) detail::testHooks().beforeReloadCommit();
+  detail::testHooks().beforeReloadCommit();
   publish(next);  // the single commit point (research R-14)
   metrics.countLoad(LoadResultLabel::Ok);
   metrics.activeVersion.store(nextVersion, std::memory_order_relaxed);
@@ -437,7 +437,7 @@ StopReport DecoderService::stop(std::chrono::milliseconds deadline) {
     return report;
   }
   impl_->state.store(ServiceState::Stopping);
-  if (detail::testHooks().onStopRequested) detail::testHooks().onStopRequested();
+  detail::testHooks().onStopRequested();
 
   // The fixed order of invariant V-06. requestStop only wakes the reader; the
   // reader owns its descriptors and closes nothing underneath itself, which is

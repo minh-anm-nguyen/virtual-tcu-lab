@@ -71,9 +71,12 @@ struct ReloadHarness {
   }
 
   ~ReloadHarness() {
-    tcu::signal::detail::testHooks().clear();
+    // Order matters: stop the threads that READ the hooks before clearing
+    // them. The first version cleared first, and ThreadSanitizer correctly
+    // reported a data race against a scheduler worker still inside runReload().
     if (service) service->stop();
     scheduler->stop(tcu::scheduler::StopMode::Discard);
+    tcu::signal::detail::testHooks().clear();
   }
 
   void feedValidSpeed(long long rxMs = 1000) {
@@ -181,15 +184,20 @@ TEST(Reload_MigrationResetsChangedSignals, RemovedSignalBecomesConfigUnavailable
 }
 
 TEST(Reload_BusyRejectsSecondRequest, V09) {
+  // Declared BEFORE the harness so it is destroyed AFTER it: locals go in
+  // reverse order, and the harness destructor is what stops the threads that
+  // may be inside this callable.
+  tcu::signal::detail::Hook holdInsideParse = [] {
+    std::this_thread::yield();
+    std::this_thread::sleep_for(std::chrono::milliseconds{200});
+  };
+
   ReloadHarness harness;
   ASSERT_TRUE(harness.service->start().ready);
 
   // Hold the first reload inside its parse so a second request arrives while
   // one is genuinely in flight.
-  tcu::signal::detail::testHooks().afterReloadParse = [] {
-    std::this_thread::yield();
-    std::this_thread::sleep_for(std::chrono::milliseconds{200});
-  };
+  tcu::signal::detail::testHooks().afterReloadParse.set(&holdInsideParse);
   EXPECT_EQ(harness.service->requestReload(), ReloadRequest::Accepted);
   EXPECT_EQ(harness.service->requestReload(), ReloadRequest::Busy)
       << "a second reload must be rejected, never queued";
@@ -259,17 +267,21 @@ TEST(RaceA_InFlightFramePinsOldVersion, B12) {
   // The 10,000-iteration budget of the task list belongs to the integration
   // suite; each iteration here costs a real file write and a real reload, so
   // this unit case runs the barrier once and asserts the invariant exactly.
+  std::atomic<bool> armed{true};
+  // Declared before the harness, for the destruction-order reason above.
+  tcu::signal::detail::Hook swapWhilePinned;
+
   ReloadHarness harness;
   ASSERT_TRUE(harness.service->start().ready);
 
-  std::atomic<bool> armed{true};
-  tcu::signal::detail::testHooks().afterPinSnapshot = [&] {
+  swapWhilePinned = [&] {
     if (!armed.exchange(false)) return;
     // Runs on the decoder worker, with v1 already pinned for this frame.
     harness.dir.replace("lab.dbc", kWithExtraSignal);
     if (harness.service->requestReload() != ReloadRequest::Accepted) return;
     (void)waitFor([&] { return harness.service->schema().version == 2u; });
   };
+  tcu::signal::detail::testHooks().afterPinSnapshot.set(&swapWhilePinned);
 
   harness.transport->pushFrame(frameOf(256, {0x10, 0x27, 0x01, 0, 0, 0, 0, 0}, 1000));
   ASSERT_TRUE(waitFor([&] { return harness.observer->batchCount() >= 1; }));
@@ -282,8 +294,9 @@ TEST(RaceA_InFlightFramePinsOldVersion, B12) {
   }
   EXPECT_EQ(harness.service->schema().version, 2u) << "while the service has moved on to v2";
 
-  // The next frame decodes against v2.
-  tcu::signal::detail::testHooks().clear();
+  // The next frame decodes against v2. Clearing a slot is an atomic store, so
+  // it is safe to do while the worker is running.
+  tcu::signal::detail::testHooks().afterPinSnapshot.clear();
   harness.transport->pushFrame(frameOf(256, {0x10, 0x27, 0x01, 0, 0, 0, 0, 0}, 1100));
   ASSERT_TRUE(waitFor([&] { return harness.observer->batchCount() >= 2; }));
   {

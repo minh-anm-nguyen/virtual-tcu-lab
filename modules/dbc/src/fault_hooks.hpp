@@ -1,36 +1,46 @@
 #pragma once
 
-// The nine fault-injection points of spec section 15.2.
+// The two fault-injection points inside the pure decoder (spec section 15.2).
+//
+// Atomic pointers to callables the test owns, for the reason the tcu_signal
+// copy of this header explains at length: std::function members here were a
+// data race between the decoder worker reading them and the test thread
+// assigning them, and ThreadSanitizer was right about it.
 //
 // src/-private on purpose: section 15.2 says not to put test hooks into the
-// public production API. A test includes this header directly (the test target
-// puts src/ on its include path); a consumer of tcu_dbc or tcu_signal has no
-// way to reach it, and there is no #ifdef build variant to keep in sync
-// (research R-23).
-//
-// Every member is an empty std::function by default, so a normal build calls
-// through an empty target at each site and does nothing.
+// public production API (research R-23).
 
+#include <atomic>
 #include <functional>
 
 namespace tcu::dbc::detail {
 
-struct FaultHooks {
-  std::function<void()> beforeValidate;
-  std::function<void()> beforeBitRead;
-  std::function<void()> afterPinSnapshot;
-  std::function<void()> beforeCacheCommit;
-  std::function<void()> afterCacheCommit;
-  std::function<void()> beforeEventPublish;
-  std::function<void()> afterReloadParse;
-  std::function<void()> beforeReloadCommit;
-  std::function<void()> onStopRequested;
+using Hook = std::function<void()>;
 
-  void clear() { *this = FaultHooks{}; }
+class HookSlot {
+ public:
+  void set(Hook* hook) noexcept { hook_.store(hook, std::memory_order_release); }
+  void clear() noexcept { hook_.store(nullptr, std::memory_order_release); }
+
+  void operator()() const {
+    Hook* hook = hook_.load(std::memory_order_acquire);
+    if (hook != nullptr) (*hook)();
+  }
+
+ private:
+  std::atomic<Hook*> hook_{nullptr};
 };
 
-/// One instance per process. Tests set a member, exercise the code, then call
-/// clear() in teardown.
+struct FaultHooks {
+  HookSlot beforeValidate;
+  HookSlot beforeBitRead;
+
+  void clear() noexcept {
+    beforeValidate.clear();
+    beforeBitRead.clear();
+  }
+};
+
 FaultHooks& testHooks() noexcept;
 
 }  // namespace tcu::dbc::detail

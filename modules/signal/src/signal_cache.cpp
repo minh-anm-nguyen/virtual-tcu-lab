@@ -40,7 +40,7 @@ bool SignalCache::isStale(const State& state, SteadyTime now) const {
 
 std::vector<QualityEvent> SignalCache::commit(const dbc::DecodedBatch& batch) {
   std::vector<QualityEvent> events;
-  if (detail::testHooks().beforeCacheCommit) detail::testHooks().beforeCacheCommit();
+  detail::testHooks().beforeCacheCommit();
 
   {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -92,7 +92,7 @@ std::vector<QualityEvent> SignalCache::commit(const dbc::DecodedBatch& batch) {
     }
   }
 
-  if (detail::testHooks().afterCacheCommit) detail::testHooks().afterCacheCommit();
+  detail::testHooks().afterCacheCommit();
   return events;
 }
 
@@ -163,7 +163,7 @@ std::vector<QualityEvent> SignalCache::scanFreshness(SteadyTime now) {
 
   // The seam race recipe B needs: a valid frame may commit right here, after we
   // decided a signal was stale but before we say so (research R-13).
-  if (detail::testHooks().freshnessSampled) detail::testHooks().freshnessSampled();
+  detail::testHooks().freshnessSampled();
 
   // Phase 2: emit only for entries whose epoch has not moved since phase 1. An
   // entry that took a valid value in between is fresh now, and a stale event

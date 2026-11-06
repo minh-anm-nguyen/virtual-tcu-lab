@@ -59,7 +59,7 @@ SignalValue decodeOne(const CanFrameView& frame, const CompiledMessage& message,
   value.unit = meta.unit;
   value.isSigned = plan.isSigned;
 
-  if (detail::testHooks().beforeBitRead) detail::testHooks().beforeBitRead();
+  detail::testHooks().beforeBitRead();
 
   const auto raw = extractRaw(frame.data, frame.size, plan.startBit, plan.width, plan.byteOrder);
   if (!raw.has_value()) {
