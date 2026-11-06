@@ -3,6 +3,11 @@ add_executable(dbc_unit_tests
   parser_test.cpp
   validator_test.cpp
   database_test.cpp
+  bit_extractor_test.cpp
+  sign_extend_test.cpp
+  scaling_test.cpp
+  decode_frame_test.cpp
+  mux_decoder_test.cpp
 )
 
 target_link_libraries(dbc_unit_tests PRIVATE tcu_dbc gtest_main)

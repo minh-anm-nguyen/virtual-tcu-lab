@@ -87,6 +87,8 @@ endif()
 # (specs/006-dbc-signal-decoder/research.md R-00). tcu_signal links tcu_can and
 # is therefore Linux-only, in the guard below.
 add_subdirectory(modules/dbc)
+add_subdirectory(apps/dbc_validate)
+add_subdirectory(apps/dbc_decode)
 
 if(TCU_BUILD_BENCHMARKS)
   add_subdirectory(benchmarks/event_bus_bench)

@@ -1,0 +1,5 @@
+add_executable(dbc_validate main.cpp)
+target_link_libraries(dbc_validate PRIVATE tcu_dbc)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(dbc_validate PRIVATE -Wall -Wextra)
+endif()

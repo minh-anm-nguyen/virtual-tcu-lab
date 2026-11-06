@@ -13,6 +13,9 @@ add_library(tcu_dbc STATIC
   src/schema_validator.cpp
   src/compiled_bitplan.cpp
   src/dbc_load.cpp
+  src/bit_extractor.cpp
+  src/signal_decoder.cpp
+  src/fault_hooks.cpp
 )
 
 target_include_directories(tcu_dbc PUBLIC include PRIVATE src)
