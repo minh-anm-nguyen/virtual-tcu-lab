@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "dbc_path": "./configs/virtual_tcu.dbc",
+  "strict": true,
+  "max_dbc_bytes": 2097152,
+  "frame_mode": "classical_can",
+  "payload_length_policy": "exact",
+  "rx_queue_capacity": 4096,
+  "decoder_workers": 1,
+  "reload": {
+    "enabled": true,
+    "debounce_ms": 300,
+    "max_attempts_per_min": 6
+  },
+  "signal_freshness": {
+    "default_timeout_ms": 500,
+    "scan_period_ms": 50,
+    "overrides": {
+      "TORQUE_STATUS.Torque": 200
+    }
+  },
+  "invalid_raw_codes": {
+    "VEHICLE_STATUS.VehicleSpeed": [65535]
+  },
+  "range_enforcement": {
+    "VEHICLE_STATUS.VehicleSpeed": true
+  },
+  "event_publish": {
+    "mode": "async",
+    "on_full": "drop_and_count"
+  },
+  "logging": {
+    "rate_limit_per_reason_per_min": 60
+  }
+}

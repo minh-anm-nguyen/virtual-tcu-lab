@@ -325,11 +325,20 @@ version and the epoch to filter on.
 
 ---
 
-## R-15: Threading — one decoder worker, and project 03's scheduler for everything periodic
+## R-15: Threading — an RX reader plus one decoder worker, and project 03's scheduler for everything periodic
 
-**Decision**: one RX queue (bounded, `rx_queue_capacity`), one decoder worker thread owned by
-`DecoderService`, and **no other owned thread**. The freshness scan (`scan_period_ms`), the reload
-debounce and the reload job itself run as `TimerScheduler` tasks from project 03.
+**Decision**: two owned threads, exactly as spec section 10.2 describes the pipeline and as project
+05's `CanService` is built: an **RX reader** that does nothing but `receive()`, stamp and enqueue,
+and **one decoder worker** that pops, decodes, commits and publishes. The freshness scan
+(`scan_period_ms`), the reload debounce and the reload job run as `TimerScheduler` tasks from
+project 03, so no timer thread is owned here.
+
+**Correction, 2026-11-06**: the first draft of this entry said "one decoder worker and no other
+owned thread". That is not implementable against the spec it claims to follow. `ICanTransport::receive`
+blocks and must be called from exactly one thread for the object's lifetime, so a single thread doing
+receive-then-decode gives the bounded RX queue nothing to absorb: the producer and the consumer
+would be the same thread, and B-13's queue-overflow behaviour could never arise from real traffic.
+ADR-05's "single decoder worker" is about decode *ordering*, not about refusing a reader.
 
 **Rationale**: Constitution Principle II, and ADR-05 fixes the single worker for deterministic
 ordering. The scheduler already provides a monotonic clock source, a bounded ready queue, a
