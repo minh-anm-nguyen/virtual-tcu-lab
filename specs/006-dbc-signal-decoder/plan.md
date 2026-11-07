@@ -445,7 +445,7 @@ Recorded in full in [tasks.md](./tasks.md); the three that change the layout:
 | Monotonic freshness; reload cannot silently reinterpret | **met.** `Freshness_*` and `Reload_MigrationResetsChangedSignals` |
 | Atomic reload tested against decode, timer and shutdown | **met.** Race A at 10,000 iterations, race B deterministically and under threads, race C with a blocked observer |
 | Bounded queue and load-shedding metrics; no growth in soak | **met.** 100,000 frames, depth never above 64, cache stays at one entry per signal |
-| Every P0 what-if mapped to a test with CI evidence | **not met.** The section 23.1 traceability table is not filled in (T067) |
+| Every P0 what-if mapped to a test with CI evidence | **mostly met.** [traceability.md](./traceability.md) maps all 116 P0 cases: 91 to a named test, 11 to a mechanism, 7 to a recorded design argument, and **7 to nothing** — the 7 are named there with what each would take |
 | Zero sanitizer findings (NFR-01) | **met.** ASan + UBSan + leak detection: 172 tests, no findings. TSan: 172 tests, no findings, after fixing the five issues it found in the test code |
 | Parser and frame fuzz clean for the agreed budget | **not met.** Both targets written, clang 14 available, budget not run - NFR-05 has no evidence |
 | Standard demo on `vcan0` documented and repeatable | **partly met.** Written and wired; **unrun**, because the WSL2 kernel has no `vcan` module. `Vcan_EndToEnd` skips with that message and the demo was exercised with `--fake` |

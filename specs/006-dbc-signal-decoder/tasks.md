@@ -153,9 +153,13 @@ On an i5-10300H under WSL2 Ubuntu 22.04, gcc 11.4, Debug builds:
 1. Run `Vcan_EndToEnd` and the `--iface vcan0` demo on a host whose kernel has
    the `vcan` module. This is the only Definition-of-Done item that cannot be
    closed on the development machine.
-2. T067: the section 23.1 traceability table, mapping each P0 what-if of spec
-   section 14 to its test id.
-3. Investigate the intermittent frame-target fuzz failure if it reappears; it
+2. Close the 7 uncovered P0 what-ifs listed at the end of
+   [traceability.md](./traceability.md): W-002, W-073, W-107, W-116, W-120,
+   W-124, W-133. Each row says what it would take; two of them (W-073 receive
+   timestamp in the future, W-107 reload during shutdown) need a decision before
+   a test, not just a test.
+3. T069: walk `quickstart.md` on a clean clone, on Linux and on Windows.
+4. Investigate the intermittent frame-target fuzz failure if it reappears; it
    has not since the corpus moved to a scratch directory.
 
 ---
@@ -413,7 +417,7 @@ and `vcan0` end to end — with one owned thread, a bounded queue and isolated o
 
 **Independent Test**: `ctest -L dbc-integration -R Cli_`.
 
-- [ ] T054 [P] [US9] Write `tests/integration/dbc_decoder/cli_test.cpp`: `Cli_ValidateExitCodes` (0 for the valid fixture, 1 for each invalid fixture with the code and line on stdout in the contracts/dbc_subset.md section 5 format, 2 for a missing file and for bad usage), `Cli_DecodeOutputStable` (the quickstart's four `--hex` invocations produce the documented lines byte-for-byte, twice in a row, and `--json` output parses — NFR-09)
+- [X] T054 [P] [US9] Write `tests/integration/dbc_decoder/cli_test.cpp`: `Cli_ValidateExitCodes` (0 for the valid fixture, 1 for each invalid fixture with the code and line on stdout in the contracts/dbc_subset.md section 5 format, 2 for a missing file and for bad usage), `Cli_DecodeOutputStable` (the quickstart's four `--hex` invocations produce the documented lines byte-for-byte, twice in a row, and `--json` output parses — NFR-09)
 - [X] T055 [US9] Implement `apps/dbc_validate/main.cpp` and `apps/dbc_decode/main.cpp` with their `CMakeLists.txt` files per contracts/dbc_api.md section 5: `dbc_validate` links `tcu_dbc` only and is portable; `dbc_decode` links `tcu_dbc` plus `tcu_can` for `CanMessage` and owns a small `candump_reader.hpp` for `--candump` (CLI only, not a transport — research R-22), with `Candump_ParsesLines` covering the `(1730793600.000000) vcan0 100#1027010050000000` form, an 8-hex-digit extended id, a zero-length payload and a malformed line that is skipped and counted. No wall clock, no unordered-map iteration in output, no locale-dependent formatting
 
 **Checkpoint**: the decoder is usable from a shell with no C++ written by the user.
@@ -430,7 +434,7 @@ in one command.
 
 - [X] T056 [P] [US10] Write `tests/integration/dbc_decoder/eventbus_test.cpp`: `EventBus_PublishesSignalsDecoded` (FR-18: an adapter observer republishes `SignalsDecoded`, `SignalQualityChanged`, `DbcReloaded` and `DbcReloadFailed`, and a subscriber receives them in order), `EventBus_PublishFailureCounted` (a full or rejecting bus increments `eventPublishFailuresTotal` and does not stall the worker), `EventBus_NoPublishUnderCacheLock` (S-07 at the integration level)
 - [X] T057 [US10] Implement `apps/virtual_dbc_demo/main.cpp` and its `CMakeLists.txt`: load `configs/decoder.json`, build the service over a `SocketCanTransport` with `--iface vcan0` or a scripted `FakeCanTransport` with `--fake`, install the Event Bus adapter observer, and run the nine-step sequence of quickstart section 3 (normal, wrong length, unknown id, unknown extended id, stale, recovery, rejected reload, committed reload, overload burst, throwing and blocking observers), printing the section 20.2 expected lines. The frames the kernel refuses on `vcan0` — bad length, RTR, ERR — are injected only in `--fake` mode, and the demo says so on screen rather than implying they went on the wire
-- [ ] T058 [P] [US10] Create `tests/fixtures/dbc/capture_normal.log` in candump format for `dbc_decode --candump`, plus `tests/fixtures/dbc/invalid/overlap_reload.dbc` as the file the demo swaps in for the rejected reload
+- [X] T058 [P] [US10] Create `tests/fixtures/dbc/capture_normal.log` in candump format for `dbc_decode --candump`, plus `tests/fixtures/dbc/invalid/overlap_reload.dbc` as the file the demo swaps in for the rejected reload
 - [X] T059 [P] [US10] Write `scripts/run_dbc_decoder_demo.sh` (configure, build, call project 05's `scripts/setup_vcan.sh` when `vcan0` is absent and the caller is root, fall back to `--fake` otherwise, run the demo, print what to look for per quickstart section 3, tear down what it created) and `modules/dbc/README.md` plus `docs/adr/006-dbc-signal-decoder.md` recording spec section 21's ADR-01..ADR-07 as accepted, each with the limitation it carries — including, in ADR-07's entry, that `vcan` is not HIL and that a successful decode is not evidence of a trustworthy sender (R-05, R-10), and an entry for R-24 recording why project 05's cache and decoder were not reused
 
 **Checkpoint**: one command demonstrates every behaviour the spec promises, minus the `vcan`
@@ -459,10 +463,10 @@ TSan.
 
 ## Phase 14: Polish & Cross-Cutting Concerns
 
-- [ ] T067 [P] Fill in the spec section 23.1 traceability table in `specs/006-dbc-signal-decoder/` with the actual test ids, layers and evidence paths — every P0 what-if of spec section 14 mapped to an executable test (DBC-021)
+- [X] T067 [P] Fill in the spec section 23.1 traceability table in `specs/006-dbc-signal-decoder/` with the actual test ids, layers and evidence paths — every P0 what-if of spec section 14 mapped to an executable test (DBC-021)
 - [X] T068 [P] Re-read contracts/metrics.md section 3 against the implementation and confirm every log event exists with exactly its listed fields, no payload byte appears in any line, and no DBC-supplied name became a metric label (Principle V, section 16.1 cardinality rule)
 - [ ] T069 Run `quickstart.md` end to end on a clean clone, on Linux and on Windows, and correct any command that does not work as written
-- [ ] T070 Add the "Post-implementation reconciliation" section to `plan.md` in project 04's style: what the sanitizers found, where test-first held and where it did not, whether `Vcan_EndToEnd` actually ran or skipped on this machine, and the honest status of each Definition of Done item — plus any shortcut taken during implementation in `shortcut:` form, and the standing R-24 cost that two signal caches now coexist
+- [X] T070 Add the "Post-implementation reconciliation" section to `plan.md` in project 04's style: what the sanitizers found, where test-first held and where it did not, whether `Vcan_EndToEnd` actually ran or skipped on this machine, and the honest status of each Definition of Done item — plus any shortcut taken during implementation in `shortcut:` form, and the standing R-24 cost that two signal caches now coexist
 
 ---
 

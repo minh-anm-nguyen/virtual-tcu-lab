@@ -4,6 +4,7 @@ add_executable(dbc_decoder_integration_tests
   reload_race_test.cpp
   vcan_test.cpp
   golden_matrix_test.cpp
+  cli_test.cpp
 )
 
 target_link_libraries(dbc_decoder_integration_tests PRIVATE
@@ -20,6 +21,12 @@ target_include_directories(dbc_decoder_integration_tests PRIVATE
 target_compile_definitions(dbc_decoder_integration_tests PRIVATE
   TCU_DBC_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures/dbc"
   TCU_CONFIG_DIR="${CMAKE_SOURCE_DIR}/configs"
+  # The CLIs are exercised through their real command line (T054), so the test
+  # needs their paths rather than their code.
+  TCU_DBC_VALIDATE_BIN="$<TARGET_FILE:dbc_validate>"
+  TCU_DBC_DECODE_BIN="$<TARGET_FILE:dbc_decode>"
 )
+
+add_dependencies(dbc_decoder_integration_tests dbc_validate dbc_decode)
 
 gtest_discover_tests(dbc_decoder_integration_tests PROPERTIES LABELS "dbc-integration")
